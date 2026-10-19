@@ -82,16 +82,27 @@ body {
 .stat.low .value { color: var(--danger); }
 .stat.low .meter i { background: var(--danger); }
 
-.tool { display: flex; gap: 12px; align-items: center; }
-.tool-icon { display: grid; grid-template-columns: repeat(3, 18px); grid-template-rows: repeat(3, 18px); gap: 2px; flex: none; }
-.tool-icon span {
-  display: grid; place-items: center;
-  font-family: var(--font-display); font-size: 11px; border-radius: 2px;
+.tools { display: flex; flex-direction: column; gap: 6px; }
+.tool-list { display: flex; flex-direction: column; gap: 6px; }
+.tool {
+  display: flex; gap: 12px; align-items: center; min-width: 0;
+  font: inherit; color: var(--fg); text-align: left; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  padding: 8px 10px;
 }
-.tool-icon .c { background: var(--lantern); color: #2a1a08; }
-.tool-icon .a { background: rgba(242, 170, 76, 0.35); color: var(--fg); }
-.tool-name { font-family: var(--font-display); font-size: 17px; }
-.tool-desc { font-size: 12px; color: var(--muted); }
+.tool:hover { border-color: var(--muted); }
+.tool:focus-visible { outline: 2px solid var(--lantern); outline-offset: 2px; }
+.tool[aria-checked="true"] { border-color: var(--lantern); background: rgba(242, 170, 76, 0.1); }
+.tool-icon { display: grid; grid-template-columns: repeat(5, 8px); grid-template-rows: repeat(5, 8px); gap: 1px; flex: none; }
+.tool-icon span { border-radius: 1px; background: rgba(239, 228, 210, 0.05); }
+.tool-text { display: flex; flex-direction: column; min-width: 0; }
+.tool-name { font-family: var(--font-display); font-size: 16px; }
+.tool-desc { font-size: 11px; color: var(--muted); }
+.tool-key {
+  margin-left: auto; flex: none;
+  font-family: var(--font-display); font-size: 11px; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 3px; padding: 0 5px;
+}
 
 .strata { display: flex; flex-direction: column; gap: 6px; }
 .strata-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
@@ -138,11 +149,12 @@ body {
 .app.portrait .title { font-size: 18px; }
 .app.portrait .strata { display: none; }
 .app.portrait .value { font-size: 22px; }
-.app.portrait .tool-icon { grid-template-columns: repeat(3, 13px); grid-template-rows: repeat(3, 13px); }
-.app.portrait .tool-icon span { font-size: 9px; }
-.app.portrait .tool-name { font-size: 14px; display: inline; }
-.app.portrait .tool-desc { display: inline; margin-left: 8px; }
-.app.portrait .tool .label { display: none; }
+.app.portrait .tools > .label { display: none; }
+.app.portrait .tool-list { flex-direction: row; }
+.app.portrait .tool { flex: 1 1 0; gap: 8px; padding: 6px 8px; }
+.app.portrait .tool-icon { grid-template-columns: repeat(5, 5px); grid-template-rows: repeat(5, 5px); }
+.app.portrait .tool-name { font-size: 14px; }
+.app.portrait .tool-desc, .app.portrait .tool-key { display: none; }
 .app.portrait .log { flex-direction: row; align-items: center; gap: 8px; }
 .app.portrait .log h2 { display: none; }
 .app.portrait #haul { flex-direction: row; overflow-x: auto; overflow-y: hidden; flex: 1; min-width: 0; }
@@ -202,17 +214,9 @@ body {
         <span class="value" id="remain">12<small> 塊</small></span>
       </div>
     </div>
-    <div class="tool">
-      <div class="tool-icon" aria-hidden="true">
-        <span></span><span class="a">3</span><span></span>
-        <span class="a">3</span><span class="c">6</span><span class="a">3</span>
-        <span></span><span class="a">3</span><span></span>
-      </div>
-      <div>
-        <div class="label">道具</div>
-        <div class="tool-name">ピッケル</div>
-        <div class="tool-desc">中心に6・隣接4マスに3</div>
-      </div>
+    <div class="tools">
+      <span class="label">道具</span>
+      <div class="tool-list" id="tools" role="radiogroup" aria-label="採掘道具"></div>
     </div>
     <div class="strata">
       <span class="label">地層と岩の耐久</span>
@@ -221,7 +225,7 @@ body {
   </header>
 
   <main class="board-wrap" id="board-wrap">
-    <canvas id="board" tabindex="0" aria-label="採掘盤面。クリックかタップで岩壁を叩きます。矢印キーで選択し、EnterかSpaceでも叩けます。"></canvas>
+    <canvas id="board" tabindex="0" aria-label="採掘盤面。クリックかタップで岩壁を叩きます。矢印キーで選択し、EnterかSpaceでも叩けます。1から3のキーで道具を切り替えます。"></canvas>
   </main>
 
   <aside class="log">
@@ -264,8 +268,26 @@ const CONFIG = {
   totalOres: 12,
   oreSize: [3, 16],
   maxAspect: 2,         // bounding box may not be thinner than 1:2
-  actions: 100,
-  pickaxe: { center: 6, adjacent: 3 },
+  actions: 200,
+  // Damage grids centred on the cell you hit (0 = no damage). Keep them odd-sized and
+  // symmetric across the diagonal: the board is shown transposed on portrait screens.
+  tools: {
+    chisel: { name: "チゼル", desc: "中心の1マスだけに4", pattern: [[4]] },
+    pickaxe: { name: "ピッケル", desc: "中心6・上下左右3", pattern: [
+      [0, 3, 0],
+      [3, 6, 3],
+      [0, 3, 0],
+    ] },
+    hammer: { name: "ハンマー", desc: "5×5に8・6・4", pattern: [
+      [0, 4, 0, 4, 0],
+      [4, 6, 8, 6, 4],
+      [0, 8, 8, 8, 0],
+      [4, 6, 8, 6, 4],
+      [0, 4, 0, 4, 0],
+    ] },
+  },
+  toolOrder: ["chisel", "pickaxe", "hammer"],
+  defaultTool: "pickaxe",
   score: { perCell: 10, bonusPerCellSq: 2 },
 };
 
@@ -310,7 +332,7 @@ function createGame(seed) {
     cells.push(layer);
   }
   const game = {
-    v: 1, seed, cells, ores: {}, nextOreId: 1,
+    v: 2, seed, cells, ores: {}, nextOreId: 1,
     actionsLeft: CONFIG.actions, moves: 0, score: 0, haul: [], lostCells: 0,
     over: false, endReason: null,
   };
@@ -443,24 +465,30 @@ function frontLayer(game, x, y) {
   return -1;
 }
 
-// Which cells a pickaxe swing at (x, y) would hit, or null if nothing is there.
-function strikeTargets(game, x, y) {
+// Which cells a swing of `tool` at (x, y) would hit, or null if nothing is there.
+function strikeTargets(game, x, y, tool) {
   const d = frontLayer(game, x, y);
   if (d < 0) return null;
-  const hits = [{ x, y, l: d, dmg: CONFIG.pickaxe.center, center: true }];
-  for (const [dx, dy] of DIRS4) {
-    const nx = x + dx, ny = y + dy;
-    if (!inBounds(nx, ny)) continue;
-    const f = frontLayer(game, nx, ny);
-    if (f < 0 || f > d) continue; // deeper than the centre: the blow misses it
-    hits.push({ x: nx, y: ny, l: f, dmg: CONFIG.pickaxe.adjacent, center: false });
+  const pat = CONFIG.tools[tool].pattern;
+  const cy = (pat.length - 1) / 2, cx = (pat[0].length - 1) / 2;
+  const hits = [{ x, y, l: d, dmg: pat[cy][cx], center: true }];
+  for (let j = 0; j < pat.length; j++) {
+    for (let i = 0; i < pat[j].length; i++) {
+      const dmg = pat[j][i];
+      if (!dmg || (i === cx && j === cy)) continue;
+      const nx = x + i - cx, ny = y + j - cy;
+      if (!inBounds(nx, ny)) continue;
+      const f = frontLayer(game, nx, ny);
+      if (f < 0 || f > d) continue; // deeper than the centre: the blow misses it
+      hits.push({ x: nx, y: ny, l: f, dmg, center: false });
+    }
   }
   return hits;
 }
 
-function strike(game, x, y) {
+function strike(game, x, y, tool) {
   if (game.over) return null;
-  const hits = strikeTargets(game, x, y);
+  const hits = strikeTargets(game, x, y, tool);
   if (!hits) return null;
   game.actionsLeft--;
   game.moves++;
@@ -565,6 +593,7 @@ const ORE_COLORS = {
   emerald: { light: [150, 240, 196], mid: [34, 176, 116], dark: [12, 110, 72], edge: [4, 56, 36], chip: [60, 210, 140] },
 };
 const SHADE = [1, 0.78, 0.6, 0.46, 0.34];
+const TOOL_SHAKE = { chisel: 0.35, pickaxe: 1, hammer: 1.8 };
 const VOID = [22, 18, 16];
 
 const $ = (id) => document.getElementById(id);
@@ -572,7 +601,7 @@ const canvas = $("board"), ctx = canvas.getContext("2d");
 const app = $("app"), wrap = $("board-wrap");
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-let game = null, portrait = false, S = 40, dpr = 1, hover = null;
+let game = null, tool = CONFIG.defaultTool, portrait = false, S = 40, dpr = 1, hover = null;
 let crackCache = new Map();
 const fx = { particles: [], flashes: [], ghosts: [], texts: [], shake: 0 };
 
@@ -831,7 +860,7 @@ function render() {
 }
 
 function drawHover() {
-  const hits = strikeTargets(game, hover.x, hover.y);
+  const hits = strikeTargets(game, hover.x, hover.y, tool);
   if (!hits) {
     const { c, r } = toDisplay(hover.x, hover.y);
     ctx.strokeStyle = "rgba(239,228,210,0.25)";
@@ -914,7 +943,7 @@ function spawnFx(ev) {
     const cy = a.cells.reduce((s, p) => s + p[1], 0) / a.cells.length;
     fx.texts.push({ x: cx, y: cy, text: `+${a.pts}`, life: 1 });
   }
-  if (!reduceMotion) fx.shake = 1;
+  if (!reduceMotion) fx.shake = TOOL_SHAKE[tool] ?? 1;
 }
 
 // ---- input ----
@@ -927,7 +956,7 @@ function cellFromEvent(e) {
 }
 
 function swing(x, y) {
-  const ev = strike(game, x, y);
+  const ev = strike(game, x, y, tool);
   if (!ev) { render(); return; } // empty cell: no action spent
   spawnFx(ev);
   updateHud(ev.acquired.length);
@@ -962,6 +991,42 @@ canvas.addEventListener("keydown", (e) => {
   }
 });
 
+// ---- tools ----
+function buildTools() {
+  $("tools").innerHTML = CONFIG.toolOrder.map((id, i) => {
+    const t = CONFIG.tools[id];
+    const pat = t.pattern, off = (5 - pat.length) / 2;
+    let cells = "";
+    for (let j = 0; j < 5; j++)
+      for (let k = 0; k < 5; k++) {
+        const d = pat[j - off]?.[k - off] ?? 0;
+        cells += d ? `<span style="background:rgba(242,170,76,${(0.2 + 0.8 * d / 8).toFixed(2)})"></span>` : "<span></span>";
+      }
+    return `<button type="button" class="tool" role="radio" data-tool="${id}" aria-checked="false">
+      <span class="tool-icon" aria-hidden="true">${cells}</span>
+      <span class="tool-text"><span class="tool-name">${t.name}</span><span class="tool-desc">${t.desc}</span></span>
+      <span class="tool-key" aria-hidden="true">${i + 1}</span>
+    </button>`;
+  }).join("");
+  $("tools").addEventListener("click", (e) => {
+    const b = e.target.closest(".tool");
+    if (b) selectTool(b.dataset.tool);
+  });
+}
+
+function selectTool(id) {
+  if (!CONFIG.tools[id]) return;
+  tool = id;
+  for (const b of document.querySelectorAll(".tool")) b.setAttribute("aria-checked", String(b.dataset.tool === id));
+  render();
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const id = CONFIG.toolOrder[Number(e.key) - 1];
+  if (id) selectTool(id);
+});
+
 // ---- HUD ----
 function buildStrata() {
   $("strata").innerHTML = ROCK_COLORS.map((col, l) =>
@@ -972,7 +1037,7 @@ function buildStrata() {
 function updateHud(freshCount = 0) {
   $("actions").textContent = game.actionsLeft;
   $("actions-bar").style.width = (100 * game.actionsLeft) / CONFIG.actions + "%";
-  $("stat-actions").classList.toggle("low", game.actionsLeft <= 20);
+  $("stat-actions").classList.toggle("low", game.actionsLeft <= ceilDiv(CONFIG.actions, 10));
   $("score").textContent = game.score.toLocaleString("ja-JP");
   $("remain").innerHTML = `${Object.keys(game.ores).length}<small> 塊</small>`;
   const haul = $("haul");
@@ -1034,11 +1099,13 @@ $("again").addEventListener("click", newGame);
 $("view-board").addEventListener("click", () => { $("result").hidden = true; canvas.focus(); });
 
 // ---- boot (keeps the current dig across live updates) ----
-window.claude?.hot?.snapshot?.(() => ({ game }));
+window.claude?.hot?.snapshot?.(() => ({ game, tool }));
 function start(data) {
   buildStrata();
+  buildTools();
+  selectTool(data?.tool ?? CONFIG.defaultTool);
   const saved = data && data.game;
-  if (saved && saved.v === 1 && saved.cells?.length === CONFIG.layers) {
+  if (saved && saved.v === 2 && saved.cells?.length === CONFIG.layers) {
     game = saved;
     updateHud();
   } else {
