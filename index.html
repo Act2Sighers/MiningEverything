@@ -1,0 +1,1051 @@
+<title>MiningEverything</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
+<style>
+/* Layout: the rock face owns the stage; a lantern-lit panel sits beside it (landscape) or above/below it (portrait). Single dark mine theme by design. */
+:root {
+  --bg: #1a1613;
+  --panel: #241e19;
+  --line: #3b3129;
+  --fg: #efe4d2;
+  --muted: #a3927c;
+  --lantern: #f2aa4c;
+  --danger: #e3664b;
+  --gem: #2fc483;
+  --font-display: "DotGothic16", "Hiragino Kaku Gothic ProN", "Noto Sans JP", monospace;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  box-sizing: border-box;
+  margin: 0;
+  overflow: hidden;
+  padding-block: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: radial-gradient(ellipse 80% 60% at 75% 0%, rgba(242, 170, 76, 0.07), transparent 70%), var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+}
+*, *::before, *::after { box-sizing: border-box; }
+
+.app { height: 100%; display: grid; gap: 14px; min-height: 0; }
+.app.landscape {
+  grid-template-columns: minmax(0, 1fr) 272px;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "board hud" "board log";
+}
+.app.portrait {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "hud" "board" "log";
+  gap: 10px;
+}
+
+/* ---- board ---- */
+.board-wrap {
+  grid-area: board;
+  min-width: 0; min-height: 0;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+#board {
+  display: block;
+  touch-action: none;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px var(--line), 0 0 0 5px #120f0d, 0 0 0 6px var(--line), 0 18px 40px rgba(0, 0, 0, 0.5);
+  cursor: crosshair;
+}
+#board:focus-visible { outline: 2px solid var(--lantern); outline-offset: 8px; }
+
+/* ---- hud ---- */
+.hud { grid-area: hud; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.brand { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.title { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 22px; letter-spacing: 0.04em; color: var(--lantern); }
+.sub { font-size: 12px; color: var(--muted); }
+
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.stat {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.label { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; white-space: nowrap; }
+.value { font-family: var(--font-display); font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.value small { font-size: 13px; color: var(--muted); }
+.meter { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+.meter i { display: block; height: 100%; width: 100%; background: var(--lantern); transition: width 0.2s; }
+.stat.low .value { color: var(--danger); }
+.stat.low .meter i { background: var(--danger); }
+
+.tool { display: flex; gap: 12px; align-items: center; }
+.tool-icon { display: grid; grid-template-columns: repeat(3, 18px); grid-template-rows: repeat(3, 18px); gap: 2px; flex: none; }
+.tool-icon span {
+  display: grid; place-items: center;
+  font-family: var(--font-display); font-size: 11px; border-radius: 2px;
+}
+.tool-icon .c { background: var(--lantern); color: #2a1a08; }
+.tool-icon .a { background: rgba(242, 170, 76, 0.35); color: var(--fg); }
+.tool-name { font-family: var(--font-display); font-size: 17px; }
+.tool-desc { font-size: 12px; color: var(--muted); }
+
+.strata { display: flex; flex-direction: column; gap: 6px; }
+.strata-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.stratum { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
+.stratum i { display: block; height: 12px; border-radius: 2px; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25); }
+.stratum b { font-weight: 400; font-variant-numeric: tabular-nums; }
+
+/* ---- haul log ---- */
+.log { grid-area: log; display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
+.log h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 14px; color: var(--muted); letter-spacing: 0.08em; }
+#haul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; flex: 1; }
+#haul li {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  padding: 7px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+}
+#haul li.fresh { animation: arrive 0.6s ease-out; }
+@keyframes arrive { from { border-color: var(--gem); background: rgba(47, 196, 131, 0.18); } }
+.gem-icon {
+  justify-self: center;
+  width: var(--g, 14px); height: var(--g, 14px); transform: rotate(45deg);
+  background: linear-gradient(135deg, #8ff0c3, #1fae72 55%, #0a6a46);
+  box-shadow: 0 0 0 1px #053d29;
+}
+.haul-name { font-size: 13px; }
+.haul-meta { font-size: 11px; color: var(--muted); }
+.haul-pts { font-family: var(--font-display); font-size: 15px; color: var(--lantern); font-variant-numeric: tabular-nums; }
+#haul li.empty { display: block; background: none; border: none; padding: 0; flex: 1 1 auto; min-width: 0; }
+.empty-note { font-size: 12px; line-height: 1.7; color: var(--muted); margin: 0; max-width: 34ch; }
+
+.btn {
+  font-family: var(--font-display); font-size: 15px;
+  background: transparent; color: var(--fg);
+  border: 1px solid var(--line); border-radius: 4px;
+  padding: 10px 14px; cursor: pointer;
+}
+.btn:hover { border-color: var(--muted); }
+.btn:focus-visible { outline: 2px solid var(--lantern); outline-offset: 2px; }
+.btn.primary { background: var(--lantern); border-color: var(--lantern); color: #2a1a08; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.confirm { border-color: var(--danger); color: var(--danger); }
+
+/* portrait compaction */
+.app.portrait .hud { gap: 8px; }
+.app.portrait .title { font-size: 18px; }
+.app.portrait .strata { display: none; }
+.app.portrait .value { font-size: 22px; }
+.app.portrait .tool-icon { grid-template-columns: repeat(3, 13px); grid-template-rows: repeat(3, 13px); }
+.app.portrait .tool-icon span { font-size: 9px; }
+.app.portrait .tool-name { font-size: 14px; display: inline; }
+.app.portrait .tool-desc { display: inline; margin-left: 8px; }
+.app.portrait .tool .label { display: none; }
+.app.portrait .log { flex-direction: row; align-items: center; gap: 8px; }
+.app.portrait .log h2 { display: none; }
+.app.portrait #haul { flex-direction: row; overflow-x: auto; overflow-y: hidden; flex: 1; min-width: 0; }
+.app.portrait #haul li:not(.empty) { flex: none; grid-template-columns: 18px auto auto; padding: 5px 9px; gap: 6px; }
+.app.portrait .haul-meta { display: none; }
+.app.portrait .empty-note { max-width: none; font-size: 11px; line-height: 1.5; }
+.app.portrait .btn { padding: 8px 10px; font-size: 13px; flex: none; }
+
+/* ---- result ---- */
+.result {
+  position: fixed; inset: 0; z-index: 20;
+  display: grid; place-items: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: rgba(10, 8, 6, 0.72);
+}
+.result[hidden] { display: none; }
+.result-card {
+  width: 100%; max-width: 380px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  padding: 24px; display: flex; flex-direction: column; gap: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+.result-card h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 24px; color: var(--lantern); }
+.result-reason { margin: 0; color: var(--muted); font-size: 13px; }
+.result-score { font-family: var(--font-display); font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; }
+.result-score small { font-size: 16px; color: var(--muted); margin-left: 6px; }
+.result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin: 0; }
+.result-grid div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.result-grid dt { font-size: 12px; color: var(--muted); }
+.result-grid dd { margin: 0; font-family: var(--font-display); font-variant-numeric: tabular-nums; }
+.result-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  #haul li.fresh { animation: none; }
+  .meter i { transition: none; }
+}
+</style>
+
+<div class="app landscape" id="app">
+  <header class="hud">
+    <div class="brand">
+      <h1 class="title">MiningEverything</h1>
+      <span class="sub">採掘盤面 12×8・4層</span>
+    </div>
+    <div class="stats">
+      <div class="stat" id="stat-actions">
+        <span class="label">残り手数</span>
+        <span class="value" id="actions">100</span>
+        <div class="meter"><i id="actions-bar"></i></div>
+      </div>
+      <div class="stat">
+        <span class="label">スコア</span>
+        <span class="value" id="score">0</span>
+      </div>
+      <div class="stat">
+        <span class="label">埋蔵</span>
+        <span class="value" id="remain">12<small> 塊</small></span>
+      </div>
+    </div>
+    <div class="tool">
+      <div class="tool-icon" aria-hidden="true">
+        <span></span><span class="a">3</span><span></span>
+        <span class="a">3</span><span class="c">6</span><span class="a">3</span>
+        <span></span><span class="a">3</span><span></span>
+      </div>
+      <div>
+        <div class="label">道具</div>
+        <div class="tool-name">ピッケル</div>
+        <div class="tool-desc">中心に6・隣接4マスに3</div>
+      </div>
+    </div>
+    <div class="strata">
+      <span class="label">地層と岩の耐久</span>
+      <div class="strata-row" id="strata"></div>
+    </div>
+  </header>
+
+  <main class="board-wrap" id="board-wrap">
+    <canvas id="board" tabindex="0" aria-label="採掘盤面。クリックかタップで岩壁を叩きます。矢印キーで選択し、EnterかSpaceでも叩けます。"></canvas>
+  </main>
+
+  <aside class="log">
+    <h2>獲得した鉱石</h2>
+    <ol id="haul"></ol>
+    <button class="btn" id="restart" type="button">新しい岩壁</button>
+  </aside>
+</div>
+
+<div class="result" id="result" hidden>
+  <div class="result-card" role="dialog" aria-modal="true" aria-labelledby="result-title">
+    <h2 id="result-title">採掘終了</h2>
+    <p class="result-reason" id="result-reason"></p>
+    <div class="result-score" id="result-score">0<small>点</small></div>
+    <dl class="result-grid">
+      <div><dt>獲得</dt><dd id="r-count">0塊</dd></div>
+      <div><dt>獲得マス</dt><dd id="r-cells">0</dd></div>
+      <div><dt>最大の塊</dt><dd id="r-best">-</dd></div>
+      <div><dt>欠けたマス</dt><dd id="r-lost">0</dd></div>
+      <div><dt>使った手数</dt><dd id="r-moves">0</dd></div>
+      <div><dt>取り残し</dt><dd id="r-left">0塊</dd></div>
+    </dl>
+    <div class="result-actions">
+      <button class="btn" id="view-board" type="button">盤面を見る</button>
+      <button class="btn primary" id="again" type="button">もう一度掘る</button>
+    </div>
+  </div>
+</div>
+
+<script id="logic">
+// ===== Game rules (no DOM) =====
+const CONFIG = {
+  width: 12,            // logical long side
+  height: 8,            // logical short side
+  layers: 4,
+  rockHp: [8, 11, 14, 17],
+  oreHpDivisor: 2,      // ore hp = ceil(rock hp of the same layer / 2)
+  oreLayers: [1, 2, 3], // 0-indexed: layers 2-4
+  oresPerLayer: [2, 5],
+  totalOres: 12,
+  oreSize: [3, 16],
+  maxAspect: 2,         // bounding box may not be thinner than 1:2
+  actions: 100,
+  pickaxe: { center: 6, adjacent: 3 },
+  score: { perCell: 10, bonusPerCellSq: 2 },
+};
+
+const ORE_TYPES = {
+  emerald: { name: "エメラルド" },
+};
+
+const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+const ceilDiv = (a, b) => Math.ceil(a / b);
+const oreHp = (l) => ceilDiv(CONFIG.rockHp[l], CONFIG.oreHpDivisor);
+const inBounds = (x, y) => x >= 0 && y >= 0 && x < CONFIG.width && y < CONFIG.height;
+const oreScore = (n) => CONFIG.score.perCell * n + CONFIG.score.bonusPerCellSq * n * n;
+// crack stage: 1 at <= 2/3 of max, 2 at <= 1/3 of max (thresholds rounded up)
+const crackStage = (c) => (c.hp <= ceilDiv(c.max, 3) ? 2 : c.hp <= ceilDiv(c.max * 2, 3) ? 1 : 0);
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hash4(seed, x, y, z) {
+  let h = seed ^ Math.imul(x + 1, 0x27d4eb2d) ^ Math.imul(y + 1, 0x165667b1) ^ Math.imul(z + 1, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+function createGame(seed) {
+  const rng = mulberry32(seed);
+  const cells = [];
+  for (let l = 0; l < CONFIG.layers; l++) {
+    const layer = [];
+    for (let y = 0; y < CONFIG.height; y++) {
+      const row = [];
+      for (let x = 0; x < CONFIG.width; x++) row.push(rockCell(l));
+      layer.push(row);
+    }
+    cells.push(layer);
+  }
+  const game = {
+    v: 1, seed, cells, ores: {}, nextOreId: 1,
+    actionsLeft: CONFIG.actions, moves: 0, score: 0, haul: [], lostCells: 0,
+    over: false, endReason: null,
+  };
+  const counts = pickLayerCounts(rng);
+  CONFIG.oreLayers.forEach((l, i) => {
+    for (const shape of placeLayer(rng, counts[i])) addOre(game, l, "emerald", shape);
+  });
+  return game;
+}
+
+const rockCell = (l) => ({ t: "rock", hp: CONFIG.rockHp[l], max: CONFIG.rockHp[l], ore: 0, kind: null });
+const emptyCell = () => ({ t: "empty", hp: 0, max: 0, ore: 0, kind: null });
+
+function addOre(game, l, kind, shape) {
+  const id = game.nextOreId++;
+  const hp = oreHp(l);
+  game.ores[id] = { id, kind, layer: l, cells: shape.map(([x, y]) => [x, y]) };
+  for (const [x, y] of shape) game.cells[l][y][x] = { t: "ore", hp, max: hp, ore: id, kind };
+}
+
+function pickLayerCounts(rng) {
+  const [lo, hi] = CONFIG.oresPerLayer;
+  for (let i = 0; i < 10000; i++) {
+    const c = CONFIG.oreLayers.map(() => lo + Math.floor(rng() * (hi - lo + 1)));
+    if (c.reduce((a, b) => a + b, 0) === CONFIG.totalOres) return c;
+  }
+  throw new Error("no valid ore count split");
+}
+
+function randomOreSize(rng) {
+  const [lo, hi] = CONFIG.oreSize;
+  const u = (rng() + rng() + rng()) / 3; // bell-shaped, favors mid sizes
+  return lo + Math.min(hi - lo, Math.floor(u * (hi - lo + 1)));
+}
+
+// Place `count` ores on one layer, keeping at least one cell (incl. diagonals) between ores.
+function placeLayer(rng, count) {
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const occ = Array.from({ length: CONFIG.height }, () => new Array(CONFIG.width).fill(false));
+    const sizes = Array.from({ length: count }, () => randomOreSize(rng)).sort((a, b) => b - a);
+    const shapes = [];
+    let ok = true;
+    for (let size of sizes) {
+      let shape = null;
+      for (let t = 0; t < 60 && !shape; t++) {
+        if (t > 0 && t % 12 === 0) size = Math.max(1, size - 1);
+        shape = growShape(rng, occ, size);
+      }
+      if (!shape) { ok = false; break; }
+      for (const [x, y] of shape) occ[y][x] = true;
+      shapes.push(shape);
+    }
+    if (ok) return shapes;
+  }
+  throw new Error("ore placement failed");
+}
+
+function nearOccupied(occ, x, y) {
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++)
+      if (inBounds(x + dx, y + dy) && occ[y + dy][x + dx]) return true;
+  return false;
+}
+
+function growShape(rng, occ, size) {
+  const W = CONFIG.width;
+  const free = (x, y) => inBounds(x, y) && !nearOccupied(occ, x, y);
+  const starts = [];
+  for (let y = 0; y < CONFIG.height; y++) for (let x = 0; x < W; x++) if (free(x, y)) starts.push([x, y]);
+  if (!starts.length) return null;
+  const [sx, sy] = starts[Math.floor(rng() * starts.length)];
+  const shape = [[sx, sy]];
+  const inShape = new Set([sy * W + sx]);
+  let minX = sx, maxX = sx, minY = sy, maxY = sy;
+  while (shape.length < size) {
+    const cands = [];
+    const seen = new Set();
+    let total = 0;
+    for (const [x, y] of shape) {
+      for (const [dx, dy] of DIRS4) {
+        const nx = x + dx, ny = y + dy, k = ny * W + nx;
+        if (!free(nx, ny) || inShape.has(k) || seen.has(k)) continue;
+        seen.add(k);
+        const w = Math.max(maxX, nx) - Math.min(minX, nx) + 1;
+        const h = Math.max(maxY, ny) - Math.min(minY, ny) + 1;
+        if (Math.max(w, h) > CONFIG.maxAspect * Math.min(w, h)) continue;
+        let nb = 0;
+        for (const [ex, ey] of DIRS4) if (inBounds(nx + ex, ny + ey) && inShape.has((ny + ey) * W + nx + ex)) nb++;
+        const weight = nb * nb;
+        total += weight;
+        cands.push({ x: nx, y: ny, weight });
+      }
+    }
+    if (!cands.length) return null;
+    let r = rng() * total, pick = cands[cands.length - 1];
+    for (const c of cands) { r -= c.weight; if (r <= 0) { pick = c; break; } }
+    shape.push([pick.x, pick.y]);
+    inShape.add(pick.y * W + pick.x);
+    minX = Math.min(minX, pick.x); maxX = Math.max(maxX, pick.x);
+    minY = Math.min(minY, pick.y); maxY = Math.max(maxY, pick.y);
+  }
+  if (hasHole(inShape, minX, maxX, minY, maxY)) return null;
+  return shape;
+}
+
+// True if the shape fully encloses a non-shape cell.
+function hasHole(inShape, minX, maxX, minY, maxY) {
+  const W = CONFIG.width;
+  const x0 = minX - 1, y0 = minY - 1, bw = maxX - minX + 3, bh = maxY - minY + 3;
+  const seen = new Uint8Array(bw * bh);
+  const stack = [[0, 0]];
+  seen[0] = 1;
+  let reached = 1;
+  while (stack.length) {
+    const [i, j] = stack.pop();
+    for (const [dx, dy] of DIRS4) {
+      const a = i + dx, b = j + dy;
+      if (a < 0 || b < 0 || a >= bw || b >= bh || seen[b * bw + a]) continue;
+      if (inShape.has((y0 + b) * W + (x0 + a)) && a > 0 && b > 0 && a < bw - 1 && b < bh - 1) continue;
+      seen[b * bw + a] = 1;
+      reached++;
+      stack.push([a, b]);
+    }
+  }
+  return reached + inShape.size < bw * bh;
+}
+
+function frontLayer(game, x, y) {
+  for (let l = 0; l < CONFIG.layers; l++) if (game.cells[l][y][x].t !== "empty") return l;
+  return -1;
+}
+
+// Which cells a pickaxe swing at (x, y) would hit, or null if nothing is there.
+function strikeTargets(game, x, y) {
+  const d = frontLayer(game, x, y);
+  if (d < 0) return null;
+  const hits = [{ x, y, l: d, dmg: CONFIG.pickaxe.center, center: true }];
+  for (const [dx, dy] of DIRS4) {
+    const nx = x + dx, ny = y + dy;
+    if (!inBounds(nx, ny)) continue;
+    const f = frontLayer(game, nx, ny);
+    if (f < 0 || f > d) continue; // deeper than the centre: the blow misses it
+    hits.push({ x: nx, y: ny, l: f, dmg: CONFIG.pickaxe.adjacent, center: false });
+  }
+  return hits;
+}
+
+function strike(game, x, y) {
+  if (game.over) return null;
+  const hits = strikeTargets(game, x, y);
+  if (!hits) return null;
+  game.actionsLeft--;
+  game.moves++;
+  const ev = { hits: [], acquired: [], lostOres: 0 };
+  const touched = new Set();
+  for (const h of hits) {
+    const c = game.cells[h.l][h.y][h.x];
+    c.hp = Math.max(0, c.hp - h.dmg);
+    const destroyed = c.hp === 0;
+    ev.hits.push({ ...h, t: c.t, kind: c.kind, destroyed });
+    if (!destroyed) continue;
+    if (c.t === "ore") {
+      const ore = game.ores[c.ore];
+      ore.cells = ore.cells.filter(([ox, oy]) => ox !== h.x || oy !== h.y);
+      touched.add(ore.id);
+      game.lostCells++;
+    }
+    game.cells[h.l][h.y][h.x] = emptyCell();
+  }
+  for (const id of touched) ev.lostOres += splitOre(game, id);
+  ev.acquired = collectExtractable(game);
+  if (game.actionsLeft <= 0 || Object.keys(game.ores).length === 0) {
+    game.over = true;
+    game.endReason = Object.keys(game.ores).length === 0 ? "cleared" : "actions";
+  }
+  ev.ended = game.over;
+  return ev;
+}
+
+// Re-split a chipped ore into connected pieces. Returns 1 if it vanished entirely.
+function splitOre(game, id) {
+  const ore = game.ores[id];
+  if (!ore.cells.length) { delete game.ores[id]; return 1; }
+  const W = CONFIG.width;
+  const left = new Map(ore.cells.map(([x, y]) => [y * W + x, [x, y]]));
+  const comps = [];
+  while (left.size) {
+    const [k0, p0] = left.entries().next().value;
+    left.delete(k0);
+    const comp = [p0], stack = [p0];
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      for (const [dx, dy] of DIRS4) {
+        const k = (y + dy) * W + (x + dx);
+        if (!inBounds(x + dx, y + dy) || !left.has(k)) continue;
+        const p = left.get(k);
+        left.delete(k);
+        comp.push(p); stack.push(p);
+      }
+    }
+    comps.push(comp);
+  }
+  ore.cells = comps[0];
+  for (let i = 1; i < comps.length; i++) {
+    const nid = game.nextOreId++;
+    game.ores[nid] = { id: nid, kind: ore.kind, layer: ore.layer, cells: comps[i] };
+    for (const [x, y] of comps[i]) game.cells[ore.layer][y][x].ore = nid;
+  }
+  return 0;
+}
+
+function isExtractable(game, ore) {
+  const l = ore.layer;
+  for (const [x, y] of ore.cells) {
+    for (let f = 0; f < l; f++) if (game.cells[f][y][x].t !== "empty") return false;
+    for (const [dx, dy] of DIRS4) {
+      const nx = x + dx, ny = y + dy;
+      if (!inBounds(nx, ny)) continue; // outside the board counts as empty
+      const c = game.cells[l][ny][nx];
+      if (c.t !== "empty" && c.ore !== ore.id) return false;
+    }
+  }
+  return true;
+}
+
+function collectExtractable(game) {
+  const got = [];
+  for (const ore of Object.values(game.ores)) {
+    if (!isExtractable(game, ore)) continue;
+    const size = ore.cells.length;
+    const pts = oreScore(size);
+    for (const [x, y] of ore.cells) game.cells[ore.layer][y][x] = emptyCell();
+    delete game.ores[ore.id];
+    game.score += pts;
+    const entry = { kind: ore.kind, layer: ore.layer, size, pts, cells: ore.cells };
+    game.haul.push({ kind: entry.kind, layer: entry.layer, size, pts });
+    got.push(entry);
+  }
+  return got;
+}
+</script>
+
+<script>
+// ===== Presentation =====
+const ROCK_COLORS = [ // muted on purpose so ore reads as the only saturated thing
+  [140, 126, 110],
+  [118, 121, 106],
+  [104, 113, 124],
+  [114, 102, 118],
+];
+const ORE_COLORS = {
+  emerald: { light: [150, 240, 196], mid: [34, 176, 116], dark: [12, 110, 72], edge: [4, 56, 36], chip: [60, 210, 140] },
+};
+const SHADE = [1, 0.78, 0.6, 0.46, 0.34];
+const VOID = [22, 18, 16];
+
+const $ = (id) => document.getElementById(id);
+const canvas = $("board"), ctx = canvas.getContext("2d");
+const app = $("app"), wrap = $("board-wrap");
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+let game = null, portrait = false, S = 40, dpr = 1, hover = null;
+let crackCache = new Map();
+const fx = { particles: [], flashes: [], ghosts: [], texts: [], shake: 0 };
+
+const dims = () => (portrait ? { cols: CONFIG.height, rows: CONFIG.width } : { cols: CONFIG.width, rows: CONFIG.height });
+const toLogical = (c, r) => (portrait ? { x: r, y: c } : { x: c, y: r });
+const toDisplay = (x, y) => (portrait ? { c: y, r: x } : { c: x, r: y });
+const rgb = (a, k = 1, alpha = 1) => `rgba(${(a[0] * k) | 0},${(a[1] * k) | 0},${(a[2] * k) | 0},${alpha})`;
+
+// ---- layout ----
+function layout() {
+  portrait = window.innerHeight > window.innerWidth;
+  app.classList.toggle("portrait", portrait);
+  app.classList.toggle("landscape", !portrait);
+  const { cols, rows } = dims();
+  const r = wrap.getBoundingClientRect();
+  S = Math.max(14, Math.floor(Math.min((r.width - 14) / cols, (r.height - 14) / rows)));
+  dpr = window.devicePixelRatio || 1;
+  canvas.style.width = cols * S + "px";
+  canvas.style.height = rows * S + "px";
+  canvas.width = Math.round(cols * S * dpr);
+  canvas.height = Math.round(rows * S * dpr);
+  render();
+}
+new ResizeObserver(layout).observe(wrap);
+window.addEventListener("resize", layout);
+
+// ---- drawing ----
+function cracksFor(x, y, l) {
+  const key = `${x},${y},${l}`;
+  let c = crackCache.get(key);
+  if (c) return c;
+  const R = mulberry32(hash4(game.seed, x, y, l + 11));
+  const cx = 0.38 + R() * 0.24, cy = 0.38 + R() * 0.24, a0 = R() * Math.PI * 2;
+  const line = (a, len) => {
+    const pts = [[cx, cy]];
+    let px = cx, py = cy;
+    for (let i = 0; i < 3; i++) {
+      a += (R() - 0.5) * 1.0;
+      px = Math.min(0.97, Math.max(0.03, px + (Math.cos(a) * len) / 3));
+      py = Math.min(0.97, Math.max(0.03, py + (Math.sin(a) * len) / 3));
+      pts.push([px, py]);
+    }
+    return pts;
+  };
+  c = {
+    s1: [line(a0, 0.55), line(a0 + Math.PI * (0.8 + R() * 0.4), 0.32)],
+    s2: [line(a0 + Math.PI * (0.35 + R() * 0.2), 0.5), line(a0 - Math.PI * (0.35 + R() * 0.2), 0.5), line(a0 + Math.PI, 0.45)],
+  };
+  crackCache.set(key, c);
+  return c;
+}
+
+function drawCracks(px, py, x, y, l, stage) {
+  if (!stage) return;
+  const c = cracksFor(x, y, l);
+  const paths = stage === 1 ? c.s1 : c.s1.concat(c.s2);
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (const [color, off, w] of [["rgba(255,255,255,0.13)", 1, 0.035], ["rgba(10,6,4,0.72)", 0, 0.045]]) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, S * w);
+    for (const p of paths) {
+      ctx.beginPath();
+      p.forEach(([u, v], i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, px + u * S + off, py + v * S + off));
+      ctx.stroke();
+    }
+  }
+}
+
+function drawRock(px, py, x, y, l, cell, k) {
+  const base = ROCK_COLORS[l];
+  ctx.fillStyle = rgb(base, k);
+  ctx.fillRect(px, py, S, S);
+  const R = mulberry32(hash4(game.seed, x, y, l));
+  for (let i = 0; i < 7; i++) {
+    const light = R() < 0.45;
+    ctx.fillStyle = rgb(base, k * (light ? 1.14 : 0.82));
+    const rx = px + R() * S, ry = py + R() * S, rr = S * (0.03 + R() * 0.06);
+    ctx.beginPath();
+    ctx.ellipse(rx, ry, rr * 1.4, rr, R() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const b = Math.max(1, S * 0.06);
+  ctx.fillStyle = `rgba(255,240,220,${0.09 * k})`;
+  ctx.fillRect(px, py, S, b);
+  ctx.fillRect(px, py, b, S);
+  ctx.fillStyle = "rgba(0,0,0,0.26)";
+  ctx.fillRect(px, py + S - b, S, b);
+  ctx.fillRect(px + S - b, py, b, S);
+  drawCracks(px, py, x, y, l, crackStage(cell));
+}
+
+function drawOre(px, py, c, r, x, y, l, cell, k) {
+  const col = ORE_COLORS[cell.kind];
+  const same = (dc, dr) => {
+    const nc = c + dc, nr = r + dr;
+    const { cols, rows } = dims();
+    if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) return false;
+    const p = toLogical(nc, nr);
+    const n = game.cells[l][p.y][p.x];
+    return n.t === "ore" && n.ore === cell.ore;
+  };
+  const top = !same(0, -1), bottom = !same(0, 1), left = !same(-1, 0), right = !same(1, 0);
+  ctx.fillStyle = rgb(col.mid, k);
+  ctx.fillRect(px, py, S, S);
+  const b = S * 0.2;
+  const poly = (pts, fill) => {
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    pts.forEach(([u, v], i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, u, v));
+    ctx.closePath();
+    ctx.fill();
+  };
+  const lb = left ? b : 0, rb = right ? b : 0, tb = top ? b : 0, bb = bottom ? b : 0;
+  if (top) poly([[px, py], [px + S, py], [px + S - rb, py + b], [px + lb, py + b]], rgb(col.light, k, 0.85));
+  if (left) poly([[px, py], [px + b, py + tb], [px + b, py + S - bb], [px, py + S]], rgb(col.light, k, 0.45));
+  if (right) poly([[px + S, py], [px + S, py + S], [px + S - b, py + S - bb], [px + S - b, py + tb]], rgb(col.dark, k, 0.9));
+  if (bottom) poly([[px, py + S], [px + S, py + S], [px + S - rb, py + S - b], [px + lb, py + S - b]], rgb(col.dark, k, 1));
+  const R = mulberry32(hash4(game.seed, x, y, l + 5));
+  if (R() < 0.45) {
+    const sx = px + S * (0.3 + R() * 0.4), sy = py + S * (0.3 + R() * 0.4), sr = S * (0.08 + R() * 0.06);
+    ctx.fillStyle = `rgba(240,255,248,${0.75 * k})`;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - sr); ctx.lineTo(sx + sr * 0.25, sy - sr * 0.25); ctx.lineTo(sx + sr, sy);
+    ctx.lineTo(sx + sr * 0.25, sy + sr * 0.25); ctx.lineTo(sx, sy + sr); ctx.lineTo(sx - sr * 0.25, sy + sr * 0.25);
+    ctx.lineTo(sx - sr, sy); ctx.lineTo(sx - sr * 0.25, sy - sr * 0.25);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.strokeStyle = rgb(col.edge, 1);
+  ctx.lineWidth = Math.max(1.5, S * 0.05);
+  ctx.beginPath();
+  const e = ctx.lineWidth / 2;
+  if (top) { ctx.moveTo(px, py + e); ctx.lineTo(px + S, py + e); }
+  if (bottom) { ctx.moveTo(px, py + S - e); ctx.lineTo(px + S, py + S - e); }
+  if (left) { ctx.moveTo(px + e, py); ctx.lineTo(px + e, py + S); }
+  if (right) { ctx.moveTo(px + S - e, py); ctx.lineTo(px + S - e, py + S); }
+  ctx.stroke();
+  drawCracks(px, py, x, y, l, crackStage(cell));
+}
+
+function drawVoid(px, py, x, y, k) {
+  ctx.fillStyle = rgb(VOID, 1);
+  ctx.fillRect(px, py, S, S);
+  const R = mulberry32(hash4(game.seed, x, y, 99));
+  ctx.fillStyle = `rgba(255,230,200,${0.035 * k})`;
+  for (let i = 0; i < 4; i++) ctx.fillRect(px + R() * S, py + R() * S, S * 0.05, S * 0.05);
+}
+
+function emptyLayersAbove(g) {
+  // effDepth[l] = l minus the number of completely empty layers in front of it
+  const full = [];
+  for (let l = 0; l < CONFIG.layers; l++) {
+    let empty = true;
+    for (let y = 0; y < CONFIG.height && empty; y++)
+      for (let x = 0; x < CONFIG.width; x++) if (g.cells[l][y][x].t !== "empty") { empty = false; break; }
+    full.push(empty);
+  }
+  const eff = [];
+  let skipped = 0;
+  for (let l = 0; l <= CONFIG.layers; l++) {
+    eff.push(l - skipped);
+    if (l < CONFIG.layers && full[l]) skipped++;
+  }
+  return eff;
+}
+
+function render() {
+  if (!game) return;
+  const { cols, rows } = dims();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = rgb(VOID, 0.6);
+  ctx.fillRect(0, 0, cols * S, rows * S);
+  ctx.save();
+  if (fx.shake > 0) ctx.translate((Math.random() - 0.5) * 3 * fx.shake, (Math.random() - 0.5) * 3 * fx.shake);
+
+  const eff = emptyLayersAbove(game);
+  const front = [];
+  for (let r = 0; r < rows; r++) {
+    front.push([]);
+    for (let c = 0; c < cols; c++) {
+      const { x, y } = toLogical(c, r);
+      const f = frontLayer(game, x, y);
+      front[r].push(f < 0 ? CONFIG.layers : f);
+      const px = c * S, py = r * S;
+      if (f < 0) { drawVoid(px, py, x, y, SHADE[eff[CONFIG.layers]]); continue; }
+      const cell = game.cells[f][y][x];
+      const k = SHADE[eff[f]];
+      if (cell.t === "ore") drawOre(px, py, c, r, x, y, f, cell, k);
+      else drawRock(px, py, x, y, f, cell, k);
+    }
+  }
+
+  // walls cast shadows into deeper neighbours
+  const sw = S * 0.3;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const f = front[r][c];
+      for (const [dc, dr] of DIRS4) {
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+        const nf = front[nr][nc];
+        if (nf >= f) continue;
+        const a = Math.min(0.62, 0.3 + 0.1 * (f - nf));
+        const px = c * S, py = r * S;
+        let g;
+        if (dc === 1) g = ctx.createLinearGradient(px + S, 0, px + S - sw, 0);
+        else if (dc === -1) g = ctx.createLinearGradient(px, 0, px + sw, 0);
+        else if (dr === 1) g = ctx.createLinearGradient(0, py + S, 0, py + S - sw);
+        else g = ctx.createLinearGradient(0, py, 0, py + sw);
+        g.addColorStop(0, `rgba(0,0,0,${a})`);
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = g;
+        if (dc === 1) ctx.fillRect(px + S - sw, py, sw, S);
+        else if (dc === -1) ctx.fillRect(px, py, sw, S);
+        else if (dr === 1) ctx.fillRect(px, py + S - sw, S, sw);
+        else ctx.fillRect(px, py, S, sw);
+      }
+    }
+  }
+
+  for (const f of fx.flashes) {
+    const { c, r } = toDisplay(f.x, f.y);
+    ctx.fillStyle = `rgba(255,245,225,${0.4 * f.life})`;
+    ctx.fillRect(c * S, r * S, S, S);
+  }
+
+  if (game.over) drawBuried();
+  else if (hover) drawHover();
+
+  for (const gh of fx.ghosts) {
+    const col = ORE_COLORS[gh.kind];
+    const lift = (1 - gh.life) * S * 0.5;
+    for (const [x, y] of gh.cells) {
+      const { c, r } = toDisplay(x, y);
+      ctx.fillStyle = rgb(col.light, 1, 0.85 * gh.life);
+      ctx.fillRect(c * S + 2, r * S + 2 - lift, S - 4, S - 4);
+    }
+  }
+  for (const p of fx.particles) {
+    ctx.fillStyle = rgb(p.color, 1, Math.min(1, p.life * 1.5));
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const t of fx.texts) {
+    const size = Math.max(14, S * 0.5);
+    ctx.font = `${size}px ${getComputedStyle(document.documentElement).getPropertyValue("--font-display")}`;
+    const { c, r } = toDisplay(t.x, t.y);
+    const tx = (c + 0.5) * S, ty = (r + 0.5) * S - (1 - t.life) * S * 1.2;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = `rgba(20,14,8,${t.life})`;
+    ctx.strokeText(t.text, tx, ty);
+    ctx.fillStyle = `rgba(242,170,76,${t.life})`;
+    ctx.fillText(t.text, tx, ty);
+  }
+  ctx.restore();
+}
+
+function drawHover() {
+  const hits = strikeTargets(game, hover.x, hover.y);
+  if (!hits) {
+    const { c, r } = toDisplay(hover.x, hover.y);
+    ctx.strokeStyle = "rgba(239,228,210,0.25)";
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(c * S + 2, r * S + 2, S - 4, S - 4);
+    return;
+  }
+  for (const h of hits) {
+    const { c, r } = toDisplay(h.x, h.y);
+    const isOre = game.cells[h.l][h.y][h.x].t === "ore";
+    ctx.strokeStyle = isOre ? "#e3664b" : "#f2aa4c";
+    ctx.lineWidth = h.center ? 2.5 : 1.5;
+    ctx.setLineDash(h.center ? [] : [4, 3]);
+    const inset = h.center ? 2 : 4;
+    ctx.strokeRect(c * S + inset, r * S + inset, S - inset * 2, S - inset * 2);
+  }
+  ctx.setLineDash([]);
+}
+
+function drawBuried() {
+  ctx.setLineDash([4, 3]);
+  ctx.lineWidth = 1.5;
+  for (const ore of Object.values(game.ores)) {
+    for (const [x, y] of ore.cells) {
+      const { c, r } = toDisplay(x, y);
+      ctx.fillStyle = "rgba(47,196,131,0.22)";
+      ctx.fillRect(c * S + 3, r * S + 3, S - 6, S - 6);
+      ctx.strokeStyle = "rgba(120,235,180,0.85)";
+      ctx.strokeRect(c * S + 3, r * S + 3, S - 6, S - 6);
+    }
+  }
+  ctx.setLineDash([]);
+}
+
+// ---- animation ----
+let running = false, last = 0;
+const fxActive = () => fx.particles.length || fx.flashes.length || fx.ghosts.length || fx.texts.length || fx.shake > 0;
+function kick() {
+  if (running) return;
+  running = true;
+  last = performance.now();
+  requestAnimationFrame(tick);
+}
+function tick(t) {
+  const dt = Math.min(0.05, (t - last) / 1000);
+  last = t;
+  for (const p of fx.particles) { p.vy += 900 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt * 1.6; }
+  fx.particles = fx.particles.filter((p) => p.life > 0);
+  for (const f of fx.flashes) f.life -= dt * 7;
+  fx.flashes = fx.flashes.filter((f) => f.life > 0);
+  for (const g of fx.ghosts) g.life -= dt * 1.4;
+  fx.ghosts = fx.ghosts.filter((g) => g.life > 0);
+  for (const tx of fx.texts) tx.life -= dt * 0.8;
+  fx.texts = fx.texts.filter((tx) => tx.life > 0);
+  fx.shake = Math.max(0, fx.shake - dt * 8);
+  render();
+  if (fxActive()) requestAnimationFrame(tick);
+  else { running = false; render(); }
+}
+
+function spawnFx(ev) {
+  for (const h of ev.hits) {
+    fx.flashes.push({ x: h.x, y: h.y, life: 1 });
+    if (reduceMotion) continue;
+    const { c, r } = toDisplay(h.x, h.y);
+    const color = h.t === "ore" ? ORE_COLORS[h.kind].chip : ROCK_COLORS[h.l];
+    const n = h.destroyed ? 12 : h.center ? 5 : 2;
+    for (let i = 0; i < n; i++) {
+      fx.particles.push({
+        x: (c + 0.2 + Math.random() * 0.6) * S, y: (r + 0.2 + Math.random() * 0.6) * S,
+        vx: (Math.random() - 0.5) * S * 6, vy: -Math.random() * S * 6,
+        size: Math.max(2, S * (0.05 + Math.random() * 0.07)), life: 0.6 + Math.random() * 0.4, color,
+      });
+    }
+  }
+  for (const a of ev.acquired) {
+    fx.ghosts.push({ kind: a.kind, cells: a.cells, life: 1 });
+    const cx = a.cells.reduce((s, p) => s + p[0], 0) / a.cells.length;
+    const cy = a.cells.reduce((s, p) => s + p[1], 0) / a.cells.length;
+    fx.texts.push({ x: cx, y: cy, text: `+${a.pts}`, life: 1 });
+  }
+  if (!reduceMotion) fx.shake = 1;
+}
+
+// ---- input ----
+function cellFromEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  const c = Math.floor((e.clientX - rect.left) / S), r = Math.floor((e.clientY - rect.top) / S);
+  const { cols, rows } = dims();
+  if (c < 0 || r < 0 || c >= cols || r >= rows) return null;
+  return toLogical(c, r);
+}
+
+function swing(x, y) {
+  const ev = strike(game, x, y);
+  if (!ev) { render(); return; } // empty cell: no action spent
+  spawnFx(ev);
+  updateHud(ev.acquired.length);
+  kick();
+  if (ev.ended) setTimeout(showResult, ev.acquired.length ? 1100 : 600);
+}
+
+canvas.addEventListener("pointermove", (e) => { hover = cellFromEvent(e); render(); });
+canvas.addEventListener("pointerleave", () => { hover = null; render(); });
+canvas.addEventListener("pointerdown", (e) => {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  const p = cellFromEvent(e);
+  if (!p) return;
+  e.preventDefault();
+  swing(p.x, p.y);
+  if (e.pointerType !== "mouse") hover = null;
+  render();
+});
+canvas.addEventListener("keydown", (e) => {
+  const moves = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  const { cols, rows } = dims();
+  if (moves[e.key]) {
+    e.preventDefault();
+    const d = hover ? toDisplay(hover.x, hover.y) : { c: Math.floor(cols / 2), r: Math.floor(rows / 2) };
+    const nc = Math.min(cols - 1, Math.max(0, d.c + (hover ? moves[e.key][0] : 0)));
+    const nr = Math.min(rows - 1, Math.max(0, d.r + (hover ? moves[e.key][1] : 0)));
+    hover = toLogical(nc, nr);
+    render();
+  } else if ((e.key === "Enter" || e.key === " ") && hover) {
+    e.preventDefault();
+    swing(hover.x, hover.y);
+  }
+});
+
+// ---- HUD ----
+function buildStrata() {
+  $("strata").innerHTML = ROCK_COLORS.map((col, l) =>
+    `<div class="stratum"><i style="background:${rgb(col)}"></i><span>${l + 1}層 <b>${CONFIG.rockHp[l]}</b></span></div>`
+  ).join("");
+}
+
+function updateHud(freshCount = 0) {
+  $("actions").textContent = game.actionsLeft;
+  $("actions-bar").style.width = (100 * game.actionsLeft) / CONFIG.actions + "%";
+  $("stat-actions").classList.toggle("low", game.actionsLeft <= 20);
+  $("score").textContent = game.score.toLocaleString("ja-JP");
+  $("remain").innerHTML = `${Object.keys(game.ores).length}<small> 塊</small>`;
+  const haul = $("haul");
+  if (!game.haul.length) {
+    haul.innerHTML = `<li class="empty"><p class="empty-note">岩を叩いて鉱石を露出させましょう。鉱石の手前と、同じ層の周りの岩がすべてなくなると自動で回収されます。</p></li>`;
+  } else {
+    haul.innerHTML = game.haul.slice().reverse().map((h, i) => `
+      <li class="${i < freshCount ? "fresh" : ""}">
+        <span class="gem-icon" style="--g:${Math.round(8 + h.size * 0.9)}px"></span>
+        <span><span class="haul-name">${ORE_TYPES[h.kind].name} ${h.size}マス</span><br class="haul-meta"><span class="haul-meta">${h.layer + 1}層から</span></span>
+        <span class="haul-pts">+${h.pts}</span>
+      </li>`).join("");
+  }
+  const btn = $("restart");
+  btn.classList.remove("confirm");
+  btn.textContent = game.over ? "もう一度掘る" : "新しい岩壁";
+}
+
+function showResult() {
+  if (!game.over) return;
+  const sizes = game.haul.map((h) => h.size);
+  $("result-reason").textContent = game.endReason === "cleared"
+    ? "盤面の鉱石がすべてなくなりました。"
+    : "手数を使い切りました。";
+  $("result-score").innerHTML = `${game.score.toLocaleString("ja-JP")}<small>点</small>`;
+  $("r-count").textContent = `${game.haul.length}塊`;
+  $("r-cells").textContent = sizes.reduce((a, b) => a + b, 0);
+  $("r-best").textContent = sizes.length ? `${Math.max(...sizes)}マス` : "-";
+  $("r-lost").textContent = game.lostCells;
+  $("r-moves").textContent = game.moves;
+  $("r-left").textContent = `${Object.keys(game.ores).length}塊`;
+  $("result").hidden = false;
+  $("again").focus();
+}
+
+function newGame() {
+  game = createGame((Math.random() * 2 ** 31) | 0);
+  crackCache = new Map();
+  hover = null;
+  fx.particles = []; fx.flashes = []; fx.ghosts = []; fx.texts = []; fx.shake = 0;
+  $("result").hidden = true;
+  updateHud();
+  render();
+}
+
+let confirmTimer = 0;
+$("restart").addEventListener("click", () => {
+  const btn = $("restart");
+  if (game.over || game.moves === 0 || btn.classList.contains("confirm")) {
+    clearTimeout(confirmTimer);
+    newGame();
+    return;
+  }
+  btn.classList.add("confirm");
+  btn.textContent = "もう一度押すと交換";
+  confirmTimer = setTimeout(() => updateHud(), 3000);
+});
+$("again").addEventListener("click", newGame);
+$("view-board").addEventListener("click", () => { $("result").hidden = true; canvas.focus(); });
+
+// ---- boot (keeps the current dig across live updates) ----
+window.claude?.hot?.snapshot?.(() => ({ game }));
+function start(data) {
+  buildStrata();
+  const saved = data && data.game;
+  if (saved && saved.v === 1 && saved.cells?.length === CONFIG.layers) {
+    game = saved;
+    updateHud();
+  } else {
+    newGame();
+  }
+  layout();
+  if (game.over) showResult();
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+</script>
