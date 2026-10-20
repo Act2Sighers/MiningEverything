@@ -303,17 +303,17 @@ const CONFIG = {
   // Damage grids centred on the cell you hit (0 = no damage). Keep them odd-sized and
   // symmetric across the diagonal: the board is shown transposed on portrait screens.
   tools: {
-    chisel: { name: "チゼル", desc: "中心の1マスだけに4", pattern: [[4]] },
-    pickaxe: { name: "ピッケル", desc: "中心6・上下左右3", pattern: [
-      [0, 3, 0],
-      [3, 6, 3],
-      [0, 3, 0],
+    chisel: { name: "チゼル", desc: "中心の1マスだけに20", pattern: [[20]] },
+    pickaxe: { name: "ピッケル", desc: "中心12・上下左右8", pattern: [
+      [0, 8, 0],
+      [8, 12, 8],
+      [0, 8, 0],
     ] },
-    hammer: { name: "ハンマー", desc: "5×5に8・6・4", pattern: [
+    hammer: { name: "ハンマー", desc: "5×5に8・4", pattern: [
       [0, 4, 0, 4, 0],
-      [4, 6, 8, 6, 4],
+      [4, 8, 8, 8, 4],
       [0, 8, 8, 8, 0],
-      [4, 6, 8, 6, 4],
+      [4, 8, 8, 8, 4],
       [0, 4, 0, 4, 0],
     ] },
   },
@@ -321,7 +321,7 @@ const CONFIG = {
   defaultTool: "pickaxe",
   // Assists cost no actions but have their own charges per game.
   assists: {
-    sensor: { name: "センサー", desc: "近い鉱石2つを30手のあいだ表示", charges: 3, targets: 2, duration: 30 },
+    sensor: { name: "センサー", desc: "近い鉱石2つを30手のあいだ表示", charges: 3, targets: 2, duration: 30, depthWeight: 5 },
     tweezers: { name: "ピンセット", desc: "全体が見えている鉱石を回収", charges: 3 },
     file: { name: "ヤスリ", desc: "鉱石のない最前面の層の岩を一掃", charges: 3 },
   },
@@ -590,14 +590,15 @@ function isExposed(game, ore) {
 }
 
 // Sensor: mark the nearest ores that are not yet fully visible. Distance is
-// |dx| + |dy| + |layer difference| from the front layer at (x, y) to the ore's closest cell.
+// |dx| + |dy| + depthWeight * |layer difference| from the front layer at (x, y) to the ore's closest cell.
 function sense(game, x, y) {
   if (game.over || !game.assistsLeft.sensor) return null;
   const f = frontLayer(game, x, y);
   const l0 = f < 0 ? CONFIG.layers - 1 : f;
+  const w = CONFIG.assists.sensor.depthWeight;
   const cands = Object.values(game.ores).filter((o) => !isExposed(game, o)).map((o) => {
     let d = Infinity;
-    for (const [ox, oy] of o.cells) d = Math.min(d, Math.abs(ox - x) + Math.abs(oy - y) + Math.abs(o.layer - l0));
+    for (const [ox, oy] of o.cells) d = Math.min(d, Math.abs(ox - x) + Math.abs(oy - y) + w * Math.abs(o.layer - l0));
     return { o, d };
   });
   if (!cands.length) return { fail: "nothing" };
@@ -1319,10 +1320,11 @@ function iconHtml(grid, color) {
 }
 
 function buildTools() {
+  const maxDmg = Math.max(...CONFIG.toolOrder.flatMap((id) => CONFIG.tools[id].pattern.flat()));
   $("tools").innerHTML = CONFIG.toolOrder.map((id, i) => {
     const t = CONFIG.tools[id];
     return `<button type="button" class="tool" role="radio" data-tool="${id}" aria-checked="false">
-      ${iconHtml(t.pattern, (d) => `rgba(242,170,76,${(0.2 + (0.8 * d) / 8).toFixed(2)})`)}
+      ${iconHtml(t.pattern, (d) => `rgba(242,170,76,${(0.2 + (0.8 * d) / maxDmg).toFixed(2)})`)}
       <span class="tool-text"><span class="tool-name">${t.name}</span><span class="tool-desc">${t.desc}</span></span>
       <span class="tool-key" aria-hidden="true">${i + 1}</span>
     </button>`;
