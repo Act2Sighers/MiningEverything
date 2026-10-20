@@ -83,23 +83,31 @@ body {
 .stat.low .meter i { background: var(--danger); }
 
 .tools { display: flex; flex-direction: column; gap: 6px; }
-.tool-list { display: flex; flex-direction: column; gap: 6px; }
+.tool-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .tool {
-  display: flex; gap: 12px; align-items: center; min-width: 0;
+  position: relative;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0;
   font: inherit; color: var(--fg); text-align: left; cursor: pointer;
   background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
-  padding: 8px 10px;
+  padding: 8px;
 }
 .tool:hover { border-color: var(--muted); }
 .tool:focus-visible { outline: 2px solid var(--lantern); outline-offset: 2px; }
 .tool[aria-checked="true"] { border-color: var(--lantern); background: rgba(242, 170, 76, 0.1); }
-.tool-icon { display: grid; grid-template-columns: repeat(5, 8px); grid-template-rows: repeat(5, 8px); gap: 1px; flex: none; }
+.tool-icon { display: grid; grid-template-columns: repeat(5, 7px); grid-template-rows: repeat(5, 7px); gap: 1px; flex: none; }
 .tool-icon span { border-radius: 1px; background: rgba(239, 228, 210, 0.05); }
 .tool-text { display: flex; flex-direction: column; min-width: 0; }
-.tool-name { font-family: var(--font-display); font-size: 16px; }
-.tool-desc { font-size: 11px; color: var(--muted); }
+.tool-name { font-family: var(--font-display); font-size: 15px; white-space: nowrap; }
+.tool-desc { display: none; }
+.tool-info { margin: 0; font-size: 12px; color: var(--muted); min-height: 1.5em; }
+.tool-info b { font-weight: 400; color: var(--fg); }
+.tool:disabled { opacity: 0.4; cursor: not-allowed; }
+.tool:disabled:hover { border-color: var(--line); }
+.pips { position: absolute; top: 8px; right: 8px; display: flex; gap: 3px; }
+.pips i { width: 7px; height: 7px; border-radius: 50%; background: var(--lantern); }
+.pips i.off { background: var(--line); }
 .tool-key {
-  margin-left: auto; flex: none;
+  position: absolute; top: 6px; right: 6px;
   font-family: var(--font-display); font-size: 11px; color: var(--muted);
   border: 1px solid var(--line); border-radius: 3px; padding: 0 5px;
 }
@@ -150,11 +158,12 @@ body {
 .app.portrait .strata { display: none; }
 .app.portrait .value { font-size: 22px; }
 .app.portrait .tools > .label { display: none; }
-.app.portrait .tool-list { flex-direction: row; }
-.app.portrait .tool { flex: 1 1 0; gap: 8px; padding: 6px 8px; }
-.app.portrait .tool-icon { grid-template-columns: repeat(5, 5px); grid-template-rows: repeat(5, 5px); }
-.app.portrait .tool-name { font-size: 14px; }
-.app.portrait .tool-desc, .app.portrait .tool-key { display: none; }
+.app.portrait .tool { gap: 4px; padding: 6px 8px; }
+.app.portrait .tool-icon { grid-template-columns: repeat(5, 4px); grid-template-rows: repeat(5, 4px); }
+.app.portrait .tool-name { font-size: 13px; }
+.app.portrait .tool-key { display: none; }
+.app.portrait .tool-info { font-size: 11px; min-height: 0; }
+.app.portrait .pips i { width: 5px; height: 5px; }
 .app.portrait .log { flex-direction: row; align-items: center; gap: 8px; }
 .app.portrait .log h2 { display: none; }
 .app.portrait #haul { flex-direction: row; overflow-x: auto; overflow-y: hidden; flex: 1; min-width: 0; }
@@ -162,6 +171,16 @@ body {
 .app.portrait .haul-meta { display: none; }
 .app.portrait .empty-note { max-width: none; font-size: 11px; line-height: 1.5; }
 .app.portrait .btn { padding: 8px 10px; font-size: 13px; flex: none; }
+
+.status {
+  position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 2;
+  max-width: calc(100% - 24px); width: max-content;
+  padding: 7px 12px; border-radius: 4px;
+  background: rgba(20, 15, 11, 0.92); border: 1px solid var(--line);
+  font-size: 13px; color: var(--fg); pointer-events: none;
+}
+.status.warn { border-color: var(--danger); }
+#finish { border-color: var(--lantern); color: var(--lantern); }
 
 /* ---- result ---- */
 .result {
@@ -218,6 +237,11 @@ body {
       <span class="label">道具</span>
       <div class="tool-list" id="tools" role="radiogroup" aria-label="採掘道具"></div>
     </div>
+    <div class="tools">
+      <span class="label">アシスト(手数を使わず各3回まで)</span>
+      <div class="tool-list" id="assists" role="radiogroup" aria-label="アシスト"></div>
+    </div>
+    <p class="tool-info" id="tool-info" aria-live="polite"></p>
     <div class="strata">
       <span class="label">地層と岩の耐久</span>
       <div class="strata-row" id="strata"></div>
@@ -225,12 +249,14 @@ body {
   </header>
 
   <main class="board-wrap" id="board-wrap">
-    <canvas id="board" tabindex="0" aria-label="採掘盤面。クリックかタップで岩壁を叩きます。矢印キーで選択し、EnterかSpaceでも叩けます。1から3のキーで道具を切り替えます。"></canvas>
+    <div class="status" id="status" role="status" aria-live="polite" hidden></div>
+    <canvas id="board" tabindex="0" aria-label="採掘盤面。クリックかタップで岩壁を叩きます。矢印キーで選択し、EnterかSpaceでも叩けます。1から3のキーで採掘道具を、4から6のキーでアシストを選びます。"></canvas>
   </main>
 
   <aside class="log">
     <h2>獲得した鉱石</h2>
     <ol id="haul"></ol>
+    <button class="btn" id="finish" type="button" hidden>採掘を終える</button>
     <button class="btn" id="restart" type="button">新しい岩壁</button>
   </aside>
 </div>
@@ -246,6 +272,8 @@ body {
       <div><dt>最大の塊</dt><dd id="r-best">-</dd></div>
       <div><dt>欠けたマス</dt><dd id="r-lost">0</dd></div>
       <div><dt>使った手数</dt><dd id="r-moves">0</dd></div>
+      <div><dt>アシスト</dt><dd id="r-assists">0回</dd></div>
+      <div><dt>平均品質</dt><dd id="r-quality">-</dd></div>
       <div><dt>取り残し</dt><dd id="r-left">0塊</dd></div>
     </dl>
     <div class="result-actions">
@@ -263,9 +291,12 @@ const CONFIG = {
   layers: 4,
   rockHp: [8, 11, 14, 17],
   oreHpDivisor: 2,      // ore hp = ceil(rock hp of the same layer / 2)
-  oreLayers: [1, 2, 3], // 0-indexed: layers 2-4
-  oresPerLayer: [2, 5],
-  totalOres: 12,
+  // What is buried where (layers are 0-indexed). Each deposit spreads `total` ores
+  // over its layers with `perLayer` [min, max] ores on each.
+  deposits: [
+    { kind: "quartz", layers: [0], perLayer: [3, 3], total: 3 },
+    { kind: "emerald", layers: [1, 2, 3], perLayer: [2, 5], total: 12 },
+  ],
   oreSize: [3, 16],
   maxAspect: 2,         // bounding box may not be thinner than 1:2
   actions: 200,
@@ -288,11 +319,20 @@ const CONFIG = {
   },
   toolOrder: ["chisel", "pickaxe", "hammer"],
   defaultTool: "pickaxe",
-  score: { perCell: 10, bonusPerCellSq: 2 },
+  // Assists cost no actions but have their own charges per game.
+  assists: {
+    sensor: { name: "センサー", desc: "近い鉱石2つを30手のあいだ表示", charges: 3, targets: 2, duration: 30 },
+    tweezers: { name: "ピンセット", desc: "全体が見えている鉱石を回収", charges: 3 },
+    file: { name: "ヤスリ", desc: "鉱石のない最前面の層の岩を一掃", charges: 3 },
+  },
+  assistOrder: ["sensor", "tweezers", "file"],
+  // crackPenalty: a cracked ore cell is worth (1 - crackPenalty * damage ratio) of an intact one
+  score: { perCell: 10, bonusPerCellSq: 2, crackPenalty: 0.5 },
 };
 
 const ORE_TYPES = {
   emerald: { name: "エメラルド" },
+  quartz: { name: "石英" },
 };
 
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -332,14 +372,19 @@ function createGame(seed) {
     cells.push(layer);
   }
   const game = {
-    v: 2, seed, cells, ores: {}, nextOreId: 1,
+    v: 3, seed, cells, ores: {}, nextOreId: 1,
     actionsLeft: CONFIG.actions, moves: 0, score: 0, haul: [], lostCells: 0,
+    assistsLeft: Object.fromEntries(CONFIG.assistOrder.map((id) => [id, CONFIG.assists[id].charges])),
+    assistUses: Object.fromEntries(CONFIG.assistOrder.map((id) => [id, 0])),
+    marks: [], // sensor readings: { ids: ore ids, left: actions until it fades, x, y }
     over: false, endReason: null,
   };
-  const counts = pickLayerCounts(rng);
-  CONFIG.oreLayers.forEach((l, i) => {
-    for (const shape of placeLayer(rng, counts[i])) addOre(game, l, "emerald", shape);
-  });
+  for (const dep of CONFIG.deposits) {
+    const counts = pickLayerCounts(rng, dep);
+    dep.layers.forEach((l, i) => {
+      for (const shape of placeLayer(rng, counts[i], cells[l])) addOre(game, l, dep.kind, shape);
+    });
+  }
   return game;
 }
 
@@ -353,11 +398,11 @@ function addOre(game, l, kind, shape) {
   for (const [x, y] of shape) game.cells[l][y][x] = { t: "ore", hp, max: hp, ore: id, kind };
 }
 
-function pickLayerCounts(rng) {
-  const [lo, hi] = CONFIG.oresPerLayer;
+function pickLayerCounts(rng, dep) {
+  const [lo, hi] = dep.perLayer;
   for (let i = 0; i < 10000; i++) {
-    const c = CONFIG.oreLayers.map(() => lo + Math.floor(rng() * (hi - lo + 1)));
-    if (c.reduce((a, b) => a + b, 0) === CONFIG.totalOres) return c;
+    const c = dep.layers.map(() => lo + Math.floor(rng() * (hi - lo + 1)));
+    if (c.reduce((a, b) => a + b, 0) === dep.total) return c;
   }
   throw new Error("no valid ore count split");
 }
@@ -369,9 +414,9 @@ function randomOreSize(rng) {
 }
 
 // Place `count` ores on one layer, keeping at least one cell (incl. diagonals) between ores.
-function placeLayer(rng, count) {
+function placeLayer(rng, count, layerCells) {
   for (let attempt = 0; attempt < 400; attempt++) {
-    const occ = Array.from({ length: CONFIG.height }, () => new Array(CONFIG.width).fill(false));
+    const occ = layerCells.map((row) => row.map((c) => c.t === "ore"));
     const sizes = Array.from({ length: count }, () => randomOreSize(rng)).sort((a, b) => b - a);
     const shapes = [];
     let ok = true;
@@ -487,11 +532,12 @@ function strikeTargets(game, x, y, tool) {
 }
 
 function strike(game, x, y, tool) {
-  if (game.over) return null;
+  if (game.over || game.actionsLeft <= 0) return null;
   const hits = strikeTargets(game, x, y, tool);
   if (!hits) return null;
   game.actionsLeft--;
   game.moves++;
+  for (const m of game.marks) m.left--;
   const ev = { hits: [], acquired: [], lostOres: 0 };
   const touched = new Set();
   for (const h of hits) {
@@ -510,12 +556,95 @@ function strike(game, x, y, tool) {
   }
   for (const id of touched) ev.lostOres += splitOre(game, id);
   ev.acquired = collectExtractable(game);
-  if (game.actionsLeft <= 0 || Object.keys(game.ores).length === 0) {
-    game.over = true;
-    game.endReason = Object.keys(game.ores).length === 0 ? "cleared" : "actions";
-  }
+  pruneMarks(game);
+  checkEnd(game);
   ev.ended = game.over;
   return ev;
+}
+
+// The game ends when no ore is left, or when actions are gone and no assist that
+// can still collect ore (tweezers, file) has charges. finish() ends it by choice.
+function checkEnd(game) {
+  if (game.over) return;
+  if (!Object.keys(game.ores).length) { game.over = true; game.endReason = "cleared"; }
+  else if (game.actionsLeft <= 0 && !game.assistsLeft.tweezers && !game.assistsLeft.file) {
+    game.over = true; game.endReason = "actions";
+  }
+}
+function finish(game) {
+  if (game.over) return;
+  game.over = true;
+  game.endReason = "finished";
+}
+
+function pruneMarks(game) {
+  for (const m of game.marks) m.ids = m.ids.filter((id) => game.ores[id]);
+  game.marks = game.marks.filter((m) => m.left > 0 && m.ids.length);
+}
+
+// No ground left in front of any of the ore's cells.
+function isExposed(game, ore) {
+  for (const [x, y] of ore.cells)
+    for (let f = 0; f < ore.layer; f++) if (game.cells[f][y][x].t !== "empty") return false;
+  return true;
+}
+
+// Sensor: mark the nearest ores that are not yet fully visible. Distance is
+// |dx| + |dy| + |layer difference| from the front layer at (x, y) to the ore's closest cell.
+function sense(game, x, y) {
+  if (game.over || !game.assistsLeft.sensor) return null;
+  const f = frontLayer(game, x, y);
+  const l0 = f < 0 ? CONFIG.layers - 1 : f;
+  const cands = Object.values(game.ores).filter((o) => !isExposed(game, o)).map((o) => {
+    let d = Infinity;
+    for (const [ox, oy] of o.cells) d = Math.min(d, Math.abs(ox - x) + Math.abs(oy - y) + Math.abs(o.layer - l0));
+    return { o, d };
+  });
+  if (!cands.length) return { fail: "nothing" };
+  cands.sort((a, b) => a.d - b.d || b.o.cells.length - a.o.cells.length || a.o.id - b.o.id);
+  game.assistsLeft.sensor--;
+  game.assistUses.sensor++;
+  const mark = { ids: cands.slice(0, CONFIG.assists.sensor.targets).map((c) => c.o.id), left: CONFIG.assists.sensor.duration, x, y };
+  game.marks.push(mark);
+  return { mark };
+}
+
+// Tweezers: collect the ore seen at (x, y) if nothing is in front of any of its cells,
+// regardless of the rock beside it.
+function pluck(game, x, y) {
+  if (game.over || !game.assistsLeft.tweezers) return null;
+  const f = frontLayer(game, x, y);
+  const c = f < 0 ? null : game.cells[f][y][x];
+  if (!c || c.t !== "ore") return { fail: "not-ore" };
+  const ore = game.ores[c.ore];
+  if (!isExposed(game, ore)) return { fail: "covered" };
+  game.assistsLeft.tweezers--;
+  game.assistUses.tweezers++;
+  const acquired = [acquireOre(game, ore, "tweezers")];
+  pruneMarks(game);
+  checkEnd(game);
+  return { acquired, ended: game.over };
+}
+
+// File: on the front-most layer that still has anything in it, destroy every rock,
+// but only if that layer holds no ore at all (seen or not).
+function rasp(game) {
+  if (game.over || !game.assistsLeft.file) return null;
+  let L = -1;
+  for (let l = 0; l < CONFIG.layers && L < 0; l++)
+    if (game.cells[l].some((row) => row.some((c) => c.t !== "empty"))) L = l;
+  if (L < 0) return null;
+  if (Object.values(game.ores).some((o) => o.layer === L)) return { fail: "ore", layer: L };
+  const cleared = [];
+  for (let y = 0; y < CONFIG.height; y++)
+    for (let x = 0; x < CONFIG.width; x++)
+      if (game.cells[L][y][x].t === "rock") { cleared.push({ x, y, l: L }); game.cells[L][y][x] = emptyCell(); }
+  game.assistsLeft.file--;
+  game.assistUses.file++;
+  const acquired = collectExtractable(game);
+  pruneMarks(game);
+  checkEnd(game);
+  return { layer: L, cleared, acquired, ended: game.over };
 }
 
 // Re-split a chipped ore into connected pieces. Returns 1 if it vanished entirely.
@@ -546,6 +675,7 @@ function splitOre(game, id) {
     const nid = game.nextOreId++;
     game.ores[nid] = { id: nid, kind: ore.kind, layer: ore.layer, cells: comps[i] };
     for (const [x, y] of comps[i]) game.cells[ore.layer][y][x].ore = nid;
+    for (const m of game.marks) if (m.ids.includes(id)) m.ids.push(nid); // sensor keeps tracking the pieces
   }
   return 0;
 }
@@ -566,18 +696,29 @@ function isExtractable(game, ore) {
 
 function collectExtractable(game) {
   const got = [];
-  for (const ore of Object.values(game.ores)) {
-    if (!isExtractable(game, ore)) continue;
-    const size = ore.cells.length;
-    const pts = oreScore(size);
-    for (const [x, y] of ore.cells) game.cells[ore.layer][y][x] = emptyCell();
-    delete game.ores[ore.id];
-    game.score += pts;
-    const entry = { kind: ore.kind, layer: ore.layer, size, pts, cells: ore.cells };
-    game.haul.push({ kind: entry.kind, layer: entry.layer, size, pts });
-    got.push(entry);
-  }
+  for (const ore of Object.values(game.ores)) if (isExtractable(game, ore)) got.push(acquireOre(game, ore, "auto"));
   return got;
+}
+
+// Average value of the ore's cells: cracked cells lose part of their worth.
+function oreQuality(game, ore) {
+  let q = 0;
+  for (const [x, y] of ore.cells) {
+    const c = game.cells[ore.layer][y][x];
+    q += crackStage(c) ? 1 - (CONFIG.score.crackPenalty * (c.max - c.hp)) / c.max : 1;
+  }
+  return q / ore.cells.length;
+}
+
+function acquireOre(game, ore, via) {
+  const size = ore.cells.length;
+  const quality = oreQuality(game, ore);
+  const pts = Math.ceil(oreScore(size) * quality - 1e-9); // epsilon: keep float noise from rounding up
+  for (const [x, y] of ore.cells) game.cells[ore.layer][y][x] = emptyCell();
+  delete game.ores[ore.id];
+  game.score += pts;
+  game.haul.push({ kind: ore.kind, layer: ore.layer, size, pts, quality, via });
+  return { kind: ore.kind, layer: ore.layer, size, pts, quality, via, cells: ore.cells };
 }
 </script>
 
@@ -591,6 +732,7 @@ const ROCK_COLORS = [ // muted on purpose so ore reads as the only saturated thi
 ];
 const ORE_COLORS = {
   emerald: { light: [150, 240, 196], mid: [34, 176, 116], dark: [12, 110, 72], edge: [4, 56, 36], chip: [60, 210, 140] },
+  quartz: { light: [250, 250, 246], mid: [210, 211, 214], dark: [150, 153, 160], edge: [72, 74, 82], chip: [232, 232, 236] },
 };
 const SHADE = [1, 0.78, 0.6, 0.46, 0.34];
 const TOOL_SHAKE = { chisel: 0.35, pickaxe: 1, hammer: 1.8 };
@@ -601,9 +743,9 @@ const canvas = $("board"), ctx = canvas.getContext("2d");
 const app = $("app"), wrap = $("board-wrap");
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-let game = null, tool = CONFIG.defaultTool, portrait = false, S = 40, dpr = 1, hover = null;
+let game = null, tool = CONFIG.defaultTool, lastMining = CONFIG.defaultTool, portrait = false, S = 40, dpr = 1, hover = null;
 let crackCache = new Map();
-const fx = { particles: [], flashes: [], ghosts: [], texts: [], shake: 0 };
+const fx = { particles: [], flashes: [], ghosts: [], texts: [], ripples: [], shake: 0 };
 
 const dims = () => (portrait ? { cols: CONFIG.height, rows: CONFIG.width } : { cols: CONFIG.width, rows: CONFIG.height });
 const toLogical = (c, r) => (portrait ? { x: r, y: c } : { x: c, y: r });
@@ -827,6 +969,8 @@ function render() {
     ctx.fillRect(c * S, r * S, S, S);
   }
 
+  drawMarks();
+  for (const rp of fx.ripples) drawRipple(rp);
   if (game.over) drawBuried();
   else if (hover) drawHover();
 
@@ -846,8 +990,7 @@ function render() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   for (const t of fx.texts) {
-    const size = Math.max(14, S * 0.5);
-    ctx.font = `${size}px ${getComputedStyle(document.documentElement).getPropertyValue("--font-display")}`;
+    ctx.font = `${Math.max(14, S * 0.5)}px ${DISPLAY_FONT}`;
     const { c, r } = toDisplay(t.x, t.y);
     const tx = (c + 0.5) * S, ty = (r + 0.5) * S - (1 - t.life) * S * 1.2;
     ctx.lineWidth = 4;
@@ -859,46 +1002,157 @@ function render() {
   ctx.restore();
 }
 
-function drawHover() {
-  const hits = strikeTargets(game, hover.x, hover.y, tool);
-  if (!hits) {
-    const { c, r } = toDisplay(hover.x, hover.y);
-    ctx.strokeStyle = "rgba(239,228,210,0.25)";
-    ctx.setLineDash([]);
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(c * S + 2, r * S + 2, S - 4, S - 4);
-    return;
-  }
-  for (const h of hits) {
-    const { c, r } = toDisplay(h.x, h.y);
-    const isOre = game.cells[h.l][h.y][h.x].t === "ore";
-    ctx.strokeStyle = isOre ? "#e3664b" : "#f2aa4c";
-    ctx.lineWidth = h.center ? 2.5 : 1.5;
-    ctx.setLineDash(h.center ? [] : [4, 3]);
-    const inset = h.center ? 2 : 4;
-    ctx.strokeRect(c * S + inset, r * S + inset, S - inset * 2, S - inset * 2);
-  }
+const DISPLAY_FONT = getComputedStyle(document.documentElement).getPropertyValue("--font-display");
+const isMining = (id) => !!CONFIG.tools[id];
+
+function box(x, y, color, width = 1.5, dash = [], inset = 2) {
+  const { c, r } = toDisplay(x, y);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.setLineDash(dash);
+  ctx.strokeRect(c * S + inset, r * S + inset, S - inset * 2, S - inset * 2);
   ctx.setLineDash([]);
 }
 
-function drawBuried() {
-  ctx.setLineDash([4, 3]);
-  ctx.lineWidth = 1.5;
-  for (const ore of Object.values(game.ores)) {
-    for (const [x, y] of ore.cells) {
-      const { c, r } = toDisplay(x, y);
-      ctx.fillStyle = "rgba(47,196,131,0.22)";
-      ctx.fillRect(c * S + 3, r * S + 3, S - 6, S - 6);
-      ctx.strokeStyle = "rgba(120,235,180,0.85)";
-      ctx.strokeRect(c * S + 3, r * S + 3, S - 6, S - 6);
+// Outline the outer edge of a group of logical cells.
+function outlineCells(cells, stroke, fill, dash = []) {
+  const keys = new Set(cells.map(([x, y]) => `${x},${y}`));
+  if (fill) {
+    ctx.fillStyle = fill;
+    for (const [x, y] of cells) { const { c, r } = toDisplay(x, y); ctx.fillRect(c * S, r * S, S, S); }
+  }
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 2;
+  ctx.setLineDash(dash);
+  ctx.beginPath();
+  const e = 1.5;
+  for (const [x, y] of cells) {
+    const { c, r } = toDisplay(x, y);
+    const px = c * S, py = r * S;
+    for (const [dc, dr] of DIRS4) {
+      const n = toLogical(c + dc, r + dr);
+      if (keys.has(`${n.x},${n.y}`)) continue;
+      if (dc === 1) { ctx.moveTo(px + S - e, py); ctx.lineTo(px + S - e, py + S); }
+      else if (dc === -1) { ctx.moveTo(px + e, py); ctx.lineTo(px + e, py + S); }
+      else if (dr === 1) { ctx.moveTo(px, py + S - e); ctx.lineTo(px + S, py + S - e); }
+      else { ctx.moveTo(px, py + e); ctx.lineTo(px + S, py + e); }
     }
   }
+  ctx.stroke();
   ctx.setLineDash([]);
+}
+
+function drawTag(text, x, y, col) {
+  const fs = Math.max(10, Math.round(S * 0.26));
+  ctx.font = `${fs}px ${DISPLAY_FONT}`;
+  const w = ctx.measureText(text).width + 8, h = fs + 6;
+  x = Math.max(0, Math.min(x, dims().cols * S - w));
+  ctx.fillStyle = "rgba(20,15,11,0.9)";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = rgb(col.light, 1, 0.9);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.fillStyle = rgb(col.light);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + 4, y + h / 2 + 0.5);
+}
+
+function rippleDist(rp, ore) {
+  let d = Infinity;
+  for (const [x, y] of ore.cells) {
+    const { c, r } = toDisplay(x, y);
+    d = Math.min(d, Math.hypot((c + 0.5) * S - rp.cx, (r + 0.5) * S - rp.cy));
+  }
+  return d;
+}
+
+function drawMarks() {
+  for (const m of game.marks) {
+    const rp = fx.ripples.find((p) => p.mark === m);
+    for (const id of m.ids) {
+      const ore = game.ores[id];
+      if (!ore || (rp && rp.r < rippleDist(rp, ore))) continue; // not reached by the wave yet
+      const col = ORE_COLORS[ore.kind];
+      outlineCells(ore.cells, rgb(col.light, 1, 0.95), rgb(col.mid, 1, 0.3), [5, 3]);
+      let top = null;
+      for (const [x, y] of ore.cells) {
+        const d = toDisplay(x, y);
+        if (!top || d.r < top.r || (d.r === top.r && d.c < top.c)) top = d;
+      }
+      drawTag(`${ORE_TYPES[ore.kind].name} ${ore.layer + 1}層・${m.left}手`, top.c * S + 2, top.r * S + 2, col);
+    }
+  }
+}
+
+function drawRipple(rp) {
+  const { cols, rows } = dims();
+  const fade = Math.max(0, 1 - rp.r / Math.hypot(cols * S, rows * S));
+  ctx.lineWidth = 2;
+  for (const [off, a] of [[0, 0.8], [S * 0.6, 0.4], [S * 1.2, 0.2]]) {
+    if (rp.r - off <= 0) continue;
+    ctx.strokeStyle = `rgba(242,170,76,${a * fade})`;
+    ctx.beginPath();
+    ctx.arc(rp.cx, rp.cy, rp.r - off, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function drawHover() {
+  if (isMining(tool)) {
+    const hits = strikeTargets(game, hover.x, hover.y, tool);
+    if (!hits) { box(hover.x, hover.y, "rgba(239,228,210,0.25)"); return; }
+    for (const h of hits) {
+      const isOre = game.cells[h.l][h.y][h.x].t === "ore";
+      box(h.x, h.y, isOre ? "#e3664b" : "#f2aa4c", h.center ? 2.5 : 1.5, h.center ? [] : [4, 3], h.center ? 2 : 4);
+    }
+  } else if (tool === "sensor") {
+    const { c, r } = toDisplay(hover.x, hover.y);
+    ctx.strokeStyle = "#f2aa4c";
+    ctx.lineWidth = 2;
+    for (const k of [0.18, 0.36]) {
+      ctx.beginPath();
+      ctx.arc((c + 0.5) * S, (r + 0.5) * S, S * k, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (tool === "tweezers") {
+    const f = frontLayer(game, hover.x, hover.y);
+    const cell = f < 0 ? null : game.cells[f][hover.y][hover.x];
+    if (cell && cell.t === "ore") {
+      const ore = game.ores[cell.ore];
+      const ok = isExposed(game, ore);
+      outlineCells(ore.cells, ok ? "#8ff0c3" : "#e3664b", null, ok ? [] : [4, 3]);
+    } else box(hover.x, hover.y, "rgba(239,228,210,0.25)");
+  } else if (tool === "file") {
+    let L = -1;
+    for (let l = 0; l < CONFIG.layers && L < 0; l++)
+      if (game.cells[l].some((row) => row.some((c) => c.t !== "empty"))) L = l;
+    ctx.fillStyle = "rgba(242,170,76,0.16)";
+    for (let y = 0; y < CONFIG.height; y++)
+      for (let x = 0; x < CONFIG.width; x++)
+        if (L >= 0 && frontLayer(game, x, y) === L && game.cells[L][y][x].t === "rock") {
+          const { c, r } = toDisplay(x, y);
+          ctx.fillRect(c * S, r * S, S, S);
+        }
+    box(hover.x, hover.y, "#f2aa4c", 2);
+  }
+}
+
+function drawBuried() {
+  for (const ore of Object.values(game.ores)) {
+    const col = ORE_COLORS[ore.kind];
+    for (const [x, y] of ore.cells) {
+      const { c, r } = toDisplay(x, y);
+      ctx.fillStyle = rgb(col.mid, 1, 0.25);
+      ctx.fillRect(c * S + 3, r * S + 3, S - 6, S - 6);
+      box(x, y, rgb(col.light, 1, 0.85), 1.5, [4, 3], 3);
+    }
+  }
 }
 
 // ---- animation ----
 let running = false, last = 0;
-const fxActive = () => fx.particles.length || fx.flashes.length || fx.ghosts.length || fx.texts.length || fx.shake > 0;
+const fxActive = () => fx.particles.length || fx.flashes.length || fx.ghosts.length || fx.texts.length || fx.ripples.length || fx.shake > 0;
 function kick() {
   if (running) return;
   running = true;
@@ -916,19 +1170,23 @@ function tick(t) {
   fx.ghosts = fx.ghosts.filter((g) => g.life > 0);
   for (const tx of fx.texts) tx.life -= dt * 0.8;
   fx.texts = fx.texts.filter((tx) => tx.life > 0);
+  const { cols, rows } = dims();
+  for (const rp of fx.ripples) rp.r += S * 14 * dt;
+  fx.ripples = fx.ripples.filter((rp) => rp.r < Math.hypot(cols * S, rows * S) + S * 1.5);
   fx.shake = Math.max(0, fx.shake - dt * 8);
   render();
   if (fxActive()) requestAnimationFrame(tick);
   else { running = false; render(); }
 }
 
-function spawnFx(ev) {
-  for (const h of ev.hits) {
+function spawnFx(ev, shake = TOOL_SHAKE[tool] ?? 1) {
+  const hits = ev.hits || [];
+  for (const h of hits) {
     fx.flashes.push({ x: h.x, y: h.y, life: 1 });
     if (reduceMotion) continue;
     const { c, r } = toDisplay(h.x, h.y);
     const color = h.t === "ore" ? ORE_COLORS[h.kind].chip : ROCK_COLORS[h.l];
-    const n = h.destroyed ? 12 : h.center ? 5 : 2;
+    const n = h.destroyed ? (hits.length > 30 ? 3 : 12) : h.center ? 5 : 2;
     for (let i = 0; i < n; i++) {
       fx.particles.push({
         x: (c + 0.2 + Math.random() * 0.6) * S, y: (r + 0.2 + Math.random() * 0.6) * S,
@@ -937,13 +1195,23 @@ function spawnFx(ev) {
       });
     }
   }
-  for (const a of ev.acquired) {
+  for (const a of ev.acquired || []) {
     fx.ghosts.push({ kind: a.kind, cells: a.cells, life: 1 });
     const cx = a.cells.reduce((s, p) => s + p[0], 0) / a.cells.length;
     const cy = a.cells.reduce((s, p) => s + p[1], 0) / a.cells.length;
     fx.texts.push({ x: cx, y: cy, text: `+${a.pts}`, life: 1 });
   }
-  if (!reduceMotion) fx.shake = TOOL_SHAKE[tool] ?? 1;
+  if (!reduceMotion && shake) fx.shake = shake;
+}
+
+let sayTimer = 0;
+function say(text, warn = false) {
+  const el = $("status");
+  el.textContent = text;
+  el.classList.toggle("warn", warn);
+  el.hidden = false;
+  clearTimeout(sayTimer);
+  sayTimer = setTimeout(() => (el.hidden = true), 2800);
 }
 
 // ---- input ----
@@ -956,12 +1224,52 @@ function cellFromEvent(e) {
 }
 
 function swing(x, y) {
-  const ev = strike(game, x, y, tool);
-  if (!ev) { render(); return; } // empty cell: no action spent
-  spawnFx(ev);
-  updateHud(ev.acquired.length);
+  if (!game || game.over) return;
+  let ev = null;
+  if (isMining(tool)) {
+    ev = strike(game, x, y, tool);
+    if (!ev) { render(); return; } // empty cell: no action spent
+    spawnFx(ev);
+  } else if (tool === "sensor") {
+    ev = sense(game, x, y);
+    if (!ev) return;
+    if (ev.fail) { say("全体が見えていない鉱石はもうありません", true); return; }
+    const { c, r } = toDisplay(x, y);
+    if (!reduceMotion) fx.ripples.push({ cx: (c + 0.5) * S, cy: (r + 0.5) * S, r: 0, mark: ev.mark });
+    say(`センサー:近くの鉱石${ev.mark.ids.length}つを${CONFIG.assists.sensor.duration}手のあいだ表示します`);
+    afterAssist();
+  } else if (tool === "tweezers") {
+    ev = pluck(game, x, y);
+    if (!ev) return;
+    if (ev.fail) {
+      say(ev.fail === "not-ore" ? "ピンセットは見えている鉱石にだけ使えます" : "この鉱石はまだ一部が手前の岩に隠れています", true);
+      return;
+    }
+    spawnFx(ev, 0.3);
+    afterAssist();
+  } else if (tool === "file") {
+    ev = rasp(game);
+    if (!ev) return;
+    if (ev.fail) { say(`${ev.layer + 1}層目にまだ鉱石が残っているので使えません`, true); return; }
+    spawnFx({ hits: ev.cleared.map((h) => ({ ...h, t: "rock", destroyed: true })), acquired: ev.acquired }, 1.4);
+    say(`${ev.layer + 1}層目に残っていた岩${ev.cleared.length}マスを削り取りました`);
+    afterAssist();
+  }
+  const got = ev.acquired ? ev.acquired.length : 0;
+  updateHud(got);
   kick();
-  if (ev.ended) setTimeout(showResult, ev.acquired.length ? 1100 : 600);
+  if (game.over) setTimeout(showResult, got ? 1100 : 600);
+  else if (game.actionsLeft <= 0 && isMining(tool)) {
+    selectTool(game.assistsLeft.tweezers ? "tweezers" : "file");
+    say("手数を使い切りました。残りのアシストを使うか、「採掘を終える」を押してください");
+  }
+}
+
+// After an assist: back to the last mining tool, or to another usable assist once actions are gone.
+function afterAssist() {
+  if (game.over) return;
+  if (game.actionsLeft > 0) selectTool(lastMining);
+  else if (!toolAvailable(tool)) selectTool(game.assistsLeft.tweezers ? "tweezers" : "file");
 }
 
 canvas.addEventListener("pointermove", (e) => { hover = cellFromEvent(e); render(); });
@@ -992,38 +1300,87 @@ canvas.addEventListener("keydown", (e) => {
 });
 
 // ---- tools ----
+// 5x5 icons for the assists: 1 dim, 2 bright, 3 gem
+const ASSIST_ICONS = {
+  sensor: [[0, 1, 1, 1, 0], [1, 0, 0, 0, 1], [1, 0, 2, 0, 1], [1, 0, 0, 0, 1], [0, 1, 1, 1, 0]],
+  tweezers: [[0, 2, 0, 2, 0], [0, 2, 0, 2, 0], [0, 1, 0, 1, 0], [0, 0, 3, 0, 0], [0, 0, 0, 0, 0]],
+  file: [[2, 2, 2, 2, 2], [0, 0, 0, 0, 0], [2, 2, 2, 2, 2], [0, 0, 0, 0, 0], [2, 2, 2, 2, 2]],
+};
+
+function iconHtml(grid, color) {
+  const off = (5 - grid.length) / 2;
+  let cells = "";
+  for (let j = 0; j < 5; j++)
+    for (let k = 0; k < 5; k++) {
+      const v = grid[j - off]?.[k - off] ?? 0;
+      cells += v ? `<span style="background:${color(v)}"></span>` : "<span></span>";
+    }
+  return `<span class="tool-icon" aria-hidden="true">${cells}</span>`;
+}
+
 function buildTools() {
   $("tools").innerHTML = CONFIG.toolOrder.map((id, i) => {
     const t = CONFIG.tools[id];
-    const pat = t.pattern, off = (5 - pat.length) / 2;
-    let cells = "";
-    for (let j = 0; j < 5; j++)
-      for (let k = 0; k < 5; k++) {
-        const d = pat[j - off]?.[k - off] ?? 0;
-        cells += d ? `<span style="background:rgba(242,170,76,${(0.2 + 0.8 * d / 8).toFixed(2)})"></span>` : "<span></span>";
-      }
     return `<button type="button" class="tool" role="radio" data-tool="${id}" aria-checked="false">
-      <span class="tool-icon" aria-hidden="true">${cells}</span>
+      ${iconHtml(t.pattern, (d) => `rgba(242,170,76,${(0.2 + (0.8 * d) / 8).toFixed(2)})`)}
       <span class="tool-text"><span class="tool-name">${t.name}</span><span class="tool-desc">${t.desc}</span></span>
       <span class="tool-key" aria-hidden="true">${i + 1}</span>
     </button>`;
   }).join("");
-  $("tools").addEventListener("click", (e) => {
-    const b = e.target.closest(".tool");
-    if (b) selectTool(b.dataset.tool);
-  });
+  $("assists").innerHTML = CONFIG.assistOrder.map((id) => {
+    const a = CONFIG.assists[id];
+    return `<button type="button" class="tool" role="radio" data-tool="${id}" aria-checked="false">
+      ${iconHtml(ASSIST_ICONS[id], (v) => (v === 3 ? "#2fc483" : v === 2 ? "#f2aa4c" : "rgba(242,170,76,0.4)"))}
+      <span class="tool-text"><span class="tool-name">${a.name}</span><span class="tool-desc">${a.desc}</span></span>
+      <span class="pips"></span>
+    </button>`;
+  }).join("");
+  for (const list of [$("tools"), $("assists")]) {
+    list.addEventListener("click", (e) => {
+      const b = e.target.closest(".tool");
+      if (b) selectTool(b.dataset.tool);
+    });
+  }
+}
+
+function toolAvailable(id) {
+  if (!game) return true;
+  if (game.over) return isMining(id);
+  if (isMining(id)) return game.actionsLeft > 0;
+  if (id === "sensor" && game.actionsLeft <= 0) return false; // its reading lasts for actions
+  return game.assistsLeft[id] > 0;
 }
 
 function selectTool(id) {
-  if (!CONFIG.tools[id]) return;
+  if (!CONFIG.tools[id] && !CONFIG.assists[id]) return;
+  if (!toolAvailable(id)) return;
   tool = id;
-  for (const b of document.querySelectorAll(".tool")) b.setAttribute("aria-checked", String(b.dataset.tool === id));
+  if (isMining(id)) lastMining = id;
+  syncTools();
   render();
+}
+
+function syncTools() {
+  const t = CONFIG.tools[tool] || CONFIG.assists[tool];
+  const extra = CONFIG.assists[tool] && game ? `(残り${game.assistsLeft[tool]}回)` : "";
+  $("tool-info").innerHTML = `<b>${t.name}</b>:${t.desc}${extra}`;
+  for (const b of document.querySelectorAll(".tool")) {
+    const id = b.dataset.tool;
+    b.setAttribute("aria-checked", String(id === tool));
+    b.disabled = !toolAvailable(id);
+    b.title = (CONFIG.tools[id] || CONFIG.assists[id]).desc;
+    const pips = b.querySelector(".pips");
+    if (pips && game) {
+      const left = game.assistsLeft[id], max = CONFIG.assists[id].charges;
+      pips.innerHTML = Array.from({ length: max }, (_, i) => `<i class="${i < left ? "" : "off"}"></i>`).join("");
+      pips.setAttribute("aria-label", `残り${left}回`);
+    }
+  }
 }
 
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const id = CONFIG.toolOrder[Number(e.key) - 1];
+  const id = [...CONFIG.toolOrder, ...CONFIG.assistOrder][Number(e.key) - 1];
   if (id) selectTool(id);
 });
 
@@ -1033,6 +1390,11 @@ function buildStrata() {
     `<div class="stratum"><i style="background:${rgb(col)}"></i><span>${l + 1}層 <b>${CONFIG.rockHp[l]}</b></span></div>`
   ).join("");
 }
+
+const gemStyle = (kind, size) => {
+  const col = ORE_COLORS[kind];
+  return `--g:${Math.round(8 + size * 0.9)}px;background:linear-gradient(135deg, ${rgb(col.light)}, ${rgb(col.mid)} 55%, ${rgb(col.dark)});box-shadow:0 0 0 1px ${rgb(col.edge)}`;
+};
 
 function updateHud(freshCount = 0) {
   $("actions").textContent = game.actionsLeft;
@@ -1044,30 +1406,46 @@ function updateHud(freshCount = 0) {
   if (!game.haul.length) {
     haul.innerHTML = `<li class="empty"><p class="empty-note">岩を叩いて鉱石を露出させましょう。鉱石の手前と、同じ層の周りの岩がすべてなくなると自動で回収されます。</p></li>`;
   } else {
-    haul.innerHTML = game.haul.slice().reverse().map((h, i) => `
+    haul.innerHTML = game.haul.slice().reverse().map((h, i) => {
+      const meta = [`${h.layer + 1}層から`];
+      if (h.quality < 0.995) meta.push(`品質${Math.round(h.quality * 100)}%`);
+      if (h.via === "tweezers") meta.push("ピンセット");
+      return `
       <li class="${i < freshCount ? "fresh" : ""}">
-        <span class="gem-icon" style="--g:${Math.round(8 + h.size * 0.9)}px"></span>
-        <span><span class="haul-name">${ORE_TYPES[h.kind].name} ${h.size}マス</span><br class="haul-meta"><span class="haul-meta">${h.layer + 1}層から</span></span>
+        <span class="gem-icon" style="${gemStyle(h.kind, h.size)}"></span>
+        <span><span class="haul-name">${ORE_TYPES[h.kind].name} ${h.size}マス</span><br class="haul-meta"><span class="haul-meta">${meta.join("・")}</span></span>
         <span class="haul-pts">+${h.pts}</span>
-      </li>`).join("");
+      </li>`;
+    }).join("");
   }
+  $("finish").hidden = game.over || game.actionsLeft > 0;
   const btn = $("restart");
   btn.classList.remove("confirm");
   btn.textContent = game.over ? "もう一度掘る" : "新しい岩壁";
+  syncTools();
 }
 
 function showResult() {
   if (!game.over) return;
   const sizes = game.haul.map((h) => h.size);
-  $("result-reason").textContent = game.endReason === "cleared"
-    ? "盤面の鉱石がすべてなくなりました。"
-    : "手数を使い切りました。";
+  const cellsTotal = sizes.reduce((a, b) => a + b, 0);
+  $("result-reason").textContent = {
+    cleared: "盤面の鉱石がすべてなくなりました。",
+    finished: "採掘を終えました。",
+    actions: "手数を使い切りました。",
+  }[game.endReason];
   $("result-score").innerHTML = `${game.score.toLocaleString("ja-JP")}<small>点</small>`;
   $("r-count").textContent = `${game.haul.length}塊`;
-  $("r-cells").textContent = sizes.reduce((a, b) => a + b, 0);
+  $("r-cells").textContent = cellsTotal;
   $("r-best").textContent = sizes.length ? `${Math.max(...sizes)}マス` : "-";
   $("r-lost").textContent = game.lostCells;
   $("r-moves").textContent = game.moves;
+  const uses = CONFIG.assistOrder.map((id) => game.assistUses[id]);
+  $("r-assists").textContent = `${uses.reduce((a, b) => a + b, 0)}回`;
+  $("r-assists").title = CONFIG.assistOrder.map((id, i) => `${CONFIG.assists[id].name} ${uses[i]}回`).join("・");
+  $("r-quality").textContent = cellsTotal
+    ? `${Math.round((100 * game.haul.reduce((a, h) => a + h.quality * h.size, 0)) / cellsTotal)}%`
+    : "-";
   $("r-left").textContent = `${Object.keys(game.ores).length}塊`;
   $("result").hidden = false;
   $("again").focus();
@@ -1077,8 +1455,10 @@ function newGame() {
   game = createGame((Math.random() * 2 ** 31) | 0);
   crackCache = new Map();
   hover = null;
-  fx.particles = []; fx.flashes = []; fx.ghosts = []; fx.texts = []; fx.shake = 0;
+  fx.particles = []; fx.flashes = []; fx.ghosts = []; fx.texts = []; fx.ripples = []; fx.shake = 0;
   $("result").hidden = true;
+  $("status").hidden = true;
+  selectTool(lastMining);
   updateHud();
   render();
 }
@@ -1086,7 +1466,8 @@ function newGame() {
 let confirmTimer = 0;
 $("restart").addEventListener("click", () => {
   const btn = $("restart");
-  if (game.over || game.moves === 0 || btn.classList.contains("confirm")) {
+  const used = game.moves + CONFIG.assistOrder.reduce((a, id) => a + game.assistUses[id], 0);
+  if (game.over || used === 0 || btn.classList.contains("confirm")) {
     clearTimeout(confirmTimer);
     newGame();
     return;
@@ -1095,18 +1476,26 @@ $("restart").addEventListener("click", () => {
   btn.textContent = "もう一度押すと交換";
   confirmTimer = setTimeout(() => updateHud(), 3000);
 });
+$("finish").addEventListener("click", () => {
+  finish(game);
+  updateHud();
+  render();
+  showResult();
+});
 $("again").addEventListener("click", newGame);
 $("view-board").addEventListener("click", () => { $("result").hidden = true; canvas.focus(); });
 
 // ---- boot (keeps the current dig across live updates) ----
-window.claude?.hot?.snapshot?.(() => ({ game, tool }));
+window.claude?.hot?.snapshot?.(() => ({ game, tool, lastMining }));
 function start(data) {
   buildStrata();
   buildTools();
-  selectTool(data?.tool ?? CONFIG.defaultTool);
+  if (CONFIG.tools[data?.lastMining]) lastMining = data.lastMining;
   const saved = data && data.game;
-  if (saved && saved.v === 2 && saved.cells?.length === CONFIG.layers) {
+  if (saved && saved.v === 3 && saved.cells?.length === CONFIG.layers) {
     game = saved;
+    selectTool(data.tool);
+    if (!toolAvailable(tool)) selectTool(lastMining);
     updateHud();
   } else {
     newGame();
