@@ -34,6 +34,47 @@ body {
 *, *::before, *::after { box-sizing: border-box; }
 
 .app { height: 100%; display: grid; gap: 14px; min-height: 0; }
+.app[hidden] { display: none; }
+
+/* ---- title & mode select ---- */
+.screen {
+  position: fixed; inset: 0; z-index: 10; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px;
+  padding: max(32px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(32px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: radial-gradient(ellipse 70% 50% at 50% 35%, rgba(242, 170, 76, 0.09), transparent 70%), var(--bg);
+}
+.screen[hidden] { display: none; }
+.title-word {
+  margin: 0; text-align: center; max-width: 100%;
+  font-family: var(--font-display); font-weight: 400; font-size: clamp(34px, 9vw, 84px);
+  letter-spacing: 0.04em; color: var(--lantern); text-shadow: 0 4px 0 #0e0b09;
+  overflow-wrap: anywhere;
+}
+.title-gems { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+.title-gems .gem-icon { --g: 14px; }
+.title-sub { margin: 0; font-size: 14px; color: var(--muted); text-align: center; text-wrap: balance; }
+.btn.big { font-size: 20px; padding: 14px 52px; }
+.screen-head { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 26px; color: var(--lantern); }
+.mode-list { display: grid; gap: 14px; width: 100%; max-width: 720px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.mode-card {
+  display: flex; flex-direction: column; gap: 12px; min-width: 0;
+  font: inherit; color: var(--fg); text-align: left; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px;
+}
+.mode-card:hover { border-color: var(--lantern); }
+.mode-card:focus-visible { outline: 2px solid var(--lantern); outline-offset: 3px; }
+.mode-top { display: flex; align-items: center; gap: 10px; }
+.mode-name { font-family: var(--font-display); font-size: 22px; }
+.mode-tag { font-size: 11px; letter-spacing: 0.08em; padding: 1px 7px; border-radius: 3px; border: 1px solid var(--lantern); color: var(--lantern); }
+.mode-tag.test { border-color: var(--muted); color: var(--muted); }
+.mode-desc { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted); }
+.mode-spec { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: 12px; }
+.mode-spec dt { color: var(--muted); white-space: nowrap; }
+.mode-spec dd { margin: 0; }
+.mode-ores { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.mode-ores span { display: inline-flex; align-items: center; gap: 6px; }
+.mode-ores .gem-icon { --g: 9px; }
+
 .app.landscape {
   grid-template-columns: minmax(0, 1fr) 272px;
   grid-template-rows: auto minmax(0, 1fr);
@@ -65,8 +106,11 @@ body {
 
 /* ---- hud ---- */
 .hud { grid-area: hud; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.brand { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-#sound { margin-left: auto; align-self: center; padding: 4px 9px; font-size: 12px; }
+.brand { display: flex; flex-direction: column; gap: 6px; }
+.brand-row { display: flex; align-items: center; gap: 6px; }
+.brand-row .sub { flex: 1; min-width: 0; }
+.tools[hidden] { display: none; }
+#sound, #menu { flex: none; padding: 4px 9px; font-size: 12px; }
 #sound[aria-pressed="false"] { color: var(--muted); }
 .title { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 22px; letter-spacing: 0.04em; color: var(--lantern); }
 .sub { font-size: 12px; color: var(--muted); }
@@ -223,12 +267,28 @@ body {
 }
 </style>
 
-<div class="app landscape" id="app">
+<section class="screen" id="title">
+  <div class="title-gems" id="title-gems" aria-hidden="true"></div>
+  <h1 class="title-word">MiningEverything</h1>
+  <p class="title-sub">岩壁を叩き、層の奥に眠るものを掘り出す</p>
+  <button class="btn primary big" id="to-modes" type="button">開始</button>
+</section>
+
+<section class="screen" id="modes" hidden>
+  <h2 class="screen-head">モードを選ぶ</h2>
+  <div class="mode-list" id="mode-list"></div>
+  <button class="btn" id="back-title" type="button">タイトルへ戻る</button>
+</section>
+
+<div class="app landscape" id="app" hidden>
   <header class="hud">
     <div class="brand">
-      <h1 class="title">MiningEverything</h1>
-      <span class="sub">採掘盤面 12×8・4層</span>
-      <button class="btn" id="sound" type="button" aria-pressed="true">音:オン</button>
+      <p class="title">MiningEverything</p>
+      <div class="brand-row">
+        <span class="sub" id="mode-sub"></span>
+        <button class="btn" id="menu" type="button">モード選択</button>
+        <button class="btn" id="sound" type="button" aria-pressed="true">音:オン</button>
+      </div>
     </div>
     <div class="stats">
       <div class="stat" id="stat-actions">
@@ -249,8 +309,8 @@ body {
       <span class="label">道具</span>
       <div class="tool-list" id="tools" role="radiogroup" aria-label="採掘道具"></div>
     </div>
-    <div class="tools">
-      <span class="label">アシスト(手数を使わず各3回まで)</span>
+    <div class="tools" id="assist-box">
+      <span class="label">アシスト(手数を使わない)</span>
       <div class="tool-list" id="assists" role="radiogroup" aria-label="アシスト"></div>
     </div>
     <p class="tool-info" id="tool-info" aria-live="polite"></p>
@@ -293,6 +353,7 @@ body {
       <div><dt>取り残し</dt><dd id="r-left">0塊</dd></div>
     </dl>
     <div class="result-actions">
+      <button class="btn" id="result-menu" type="button">モード選択</button>
       <button class="btn" id="view-board" type="button">盤面を見る</button>
       <button class="btn primary" id="again" type="button">もう一度掘る</button>
     </div>
@@ -301,60 +362,119 @@ body {
 
 <script id="logic">
 // ===== Game rules (no DOM) =====
-const CONFIG = {
-  width: 12,            // logical long side
-  height: 8,            // logical short side
-  layers: 4,
-  rockHp: [8, 11, 14, 17],
-  // How many ores each layer holds, [min, max]. Which kind each one is gets drawn by weight
-  // from the ores allowed on that layer.
-  layerOreCount: [[3, 4], [3, 5], [3, 5], [3, 5]],
-  // Ore kinds (layers are 0-indexed).
-  //   weight:   draw weight among the kinds allowed on a layer (lower = rarer)
-  //   value:    score multiplier
-  //   hardness: ore hp = ceil(hp of the rock on the same layer * hardness); unbreakable ore takes no damage
-  //   size:     [min, max] cells; maxAspect: bounding box limit (null = any); shape "rect" = rectangles only
-  ores: {
-    quartz:   { name: "石英", layers: [0], weight: 10, value: 0.8, hardness: 1, size: [3, 16], maxAspect: 2 },
-    coal:     { name: "石炭", layers: [0, 1, 2, 3], weight: 4, value: 0.5, hardness: 2, size: [4, 6], maxAspect: null },
-    emerald:  { name: "エメラルド", layers: [1, 2, 3], weight: 10, value: 1, hardness: 0.5, size: [3, 16], maxAspect: 2 },
-    ruby:     { name: "ルビー", layers: [1, 2, 3], weight: 10, value: 0.9, hardness: 0.7, size: [3, 16], maxAspect: 2 },
-    sapphire: { name: "サファイア", layers: [1, 2, 3], weight: 7, value: 1.2, hardness: 0.3, size: [3, 16], maxAspect: 2 },
-    topaz:    { name: "トパーズ", layers: [1, 2, 3], weight: 8, value: 1, hardness: 0.5, size: [3, 16], maxAspect: 2, shape: "rect" },
-    diamond:  { name: "ダイヤモンド", layers: [3], weight: 2, value: 10, unbreakable: true, size: [2, 4], maxAspect: null },
-  },
-  oreOrder: ["quartz", "coal", "emerald", "ruby", "sapphire", "topaz", "diamond"],
-  actions: 50,
-  // Damage grids centred on the cell you hit (0 = no damage). Keep them odd-sized and
-  // symmetric across the diagonal: the board is shown transposed on portrait screens.
-  tools: {
-    chisel: { name: "チゼル", desc: "中心の1マスだけに20", pattern: [[20]] },
-    pickaxe: { name: "ピッケル", desc: "中心12・上下左右8", pattern: [
-      [0, 8, 0],
-      [8, 12, 8],
-      [0, 8, 0],
-    ] },
-    hammer: { name: "ハンマー", desc: "5×5に8・4", pattern: [
-      [0, 4, 0, 4, 0],
-      [4, 8, 8, 8, 4],
-      [0, 8, 8, 8, 0],
-      [4, 8, 8, 8, 4],
-      [0, 4, 0, 4, 0],
-    ] },
-  },
-  toolOrder: ["chisel", "pickaxe", "hammer"],
-  defaultTool: "pickaxe",
-  // Assists cost no actions but have their own charges per game.
-  assists: {
-    sensor: { name: "センサー", desc: "近い鉱石2つを30手のあいだ表示", charges: 3, targets: 2, duration: 30, depthWeight: 5 },
-    tweezers: { name: "ピンセット", desc: "全体が見えている鉱石を回収", charges: 3 },
-    file: { name: "ヤスリ", desc: "鉱石のない最前面の層の岩を一掃", charges: 3 },
-  },
-  assistOrder: ["sensor", "tweezers", "file"],
-  // crackPenalty: a cracked ore cell is worth (1 - crackPenalty * damage ratio) of an intact one
-  // (an ore kind may set its own crackPenalty)
-  score: { perCell: 10, bonusPerCellSq: 2, crackPenalty: 0.5 },
+// ---- Catalogs: everything a mode can pick from ----
+// Damage grids centred on the cell you hit (0 = no damage). Keep them odd-sized and
+// symmetric across the diagonal: the board is shown transposed on portrait screens.
+const TOOLS = {
+  chisel: { name: "チゼル", desc: "中心の1マスだけに20", pattern: [[20]] },
+  pickaxe: { name: "ピッケル", desc: "中心12・上下左右8", pattern: [
+    [0, 8, 0],
+    [8, 12, 8],
+    [0, 8, 0],
+  ] },
+  hammer: { name: "ハンマー", desc: "5×5に8・4", pattern: [
+    [0, 4, 0, 4, 0],
+    [4, 8, 8, 8, 4],
+    [0, 8, 8, 8, 0],
+    [4, 8, 8, 8, 4],
+    [0, 4, 0, 4, 0],
+  ] },
 };
+
+// Assists cost no actions; each mode sets how many charges it gives.
+const ASSISTS = {
+  sensor: { name: "センサー", desc: "近い鉱石2つを30手のあいだ表示", targets: 2, duration: 30, depthWeight: 5 },
+  tweezers: { name: "ピンセット", desc: "全体が見えている鉱石を回収" },
+  file: { name: "ヤスリ", desc: "鉱石のない最前面の層の岩を一掃" },
+};
+
+// Ore kinds (layers are 0-indexed).
+//   weight:   draw weight among the kinds allowed on a layer (lower = rarer)
+//   value:    score multiplier
+//   hardness: ore hp = ceil(hp of the rock on the same layer * hardness); unbreakable ore takes no damage
+//   size:     [min, max] cells; maxAspect: bounding box limit (null = any); shape "rect" = rectangles only
+const ORES = {
+  quartz:   { name: "石英", layers: [0], weight: 10, value: 0.8, hardness: 1, size: [3, 16], maxAspect: 2 },
+  coal:     { name: "石炭", layers: [0, 1, 2, 3], weight: 4, value: 0.5, hardness: 2, size: [4, 6], maxAspect: null },
+  emerald:  { name: "エメラルド", layers: [1, 2, 3], weight: 10, value: 1, hardness: 0.5, size: [3, 16], maxAspect: 2 },
+  ruby:     { name: "ルビー", layers: [1, 2, 3], weight: 10, value: 0.9, hardness: 0.7, size: [3, 16], maxAspect: 2 },
+  sapphire: { name: "サファイア", layers: [1, 2, 3], weight: 7, value: 1.2, hardness: 0.3, size: [3, 16], maxAspect: 2 },
+  topaz:    { name: "トパーズ", layers: [1, 2, 3], weight: 8, value: 1, hardness: 0.5, size: [3, 16], maxAspect: 2, shape: "rect" },
+  diamond:  { name: "ダイヤモンド", layers: [3], weight: 2, value: 10, unbreakable: true, size: [2, 4], maxAspect: null },
+};
+
+// Rock kinds. Only ordinary rock exists so far; a mode lists one per layer so other
+// worlds can bring their own.
+const ROCKS = {
+  stone: { name: "岩" },
+};
+
+// crackPenalty: a cracked ore cell is worth (1 - crackPenalty * damage ratio) of an intact one
+// (an ore kind may set its own crackPenalty)
+const SCORE = { perCell: 10, bonusPerCellSq: 2, crackPenalty: 0.5 };
+
+// ---- Modes: which parts of the catalogs a game uses ----
+//   strata: one entry per layer, front to back: rock kind and its hp, and how many ores [min, max]
+const MODES = {
+  standard: {
+    name: "スタンダード", tag: "通常",
+    desc: "通常の採掘道具とアシストで、通常の鉱石を掘る基本のモード。",
+    actions: 50,
+    strata: [
+      { rock: "stone", hp: 8, ores: [3, 4] },
+      { rock: "stone", hp: 11, ores: [3, 5] },
+      { rock: "stone", hp: 14, ores: [3, 5] },
+      { rock: "stone", hp: 17, ores: [3, 5] },
+    ],
+    ores: ["quartz", "coal", "emerald", "ruby", "sapphire", "topaz", "diamond"],
+    tools: ["chisel", "pickaxe", "hammer"],
+    defaultTool: "pickaxe",
+    assists: { sensor: 3, tweezers: 3, file: 3 },
+  },
+  discovery: {
+    name: "ディスカバリー", tag: "テスト",
+    desc: "新しい鉱石や道具の挙動を確かめるためのテスト用モード。",
+    actions: 200,
+    strata: [
+      { rock: "stone", hp: 8, ores: [3, 4] },
+      { rock: "stone", hp: 11, ores: [3, 5] },
+      { rock: "stone", hp: 14, ores: [3, 5] },
+      { rock: "stone", hp: 17, ores: [3, 5] },
+    ],
+    ores: ["quartz", "emerald"],
+    tools: ["chisel", "pickaxe"],
+    defaultTool: "pickaxe",
+    assists: {},
+  },
+};
+const MODE_ORDER = ["standard", "discovery"];
+
+const pickFrom = (catalog, ids) => Object.fromEntries(ids.map((id) => [id, catalog[id]]));
+
+// The rules a game runs on, flattened from its mode.
+function rulesFor(modeId) {
+  const m = MODES[modeId];
+  return {
+    mode: modeId,
+    width: 12,            // logical long side
+    height: 8,            // logical short side
+    layers: m.strata.length,
+    rocks: m.strata.map((s) => s.rock),
+    rockHp: m.strata.map((s) => s.hp),
+    layerOreCount: m.strata.map((s) => s.ores),
+    ores: pickFrom(ORES, m.ores),
+    oreOrder: m.ores,
+    tools: pickFrom(TOOLS, m.tools),
+    toolOrder: m.tools,
+    defaultTool: m.defaultTool,
+    assists: Object.fromEntries(Object.entries(m.assists).map(([id, charges]) => [id, { ...ASSISTS[id], charges }])),
+    assistOrder: Object.keys(m.assists),
+    actions: m.actions,
+    score: SCORE,
+  };
+}
+
+let CONFIG = rulesFor("standard");
 
 
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -394,7 +514,7 @@ function createGame(seed) {
     cells.push(layer);
   }
   const game = {
-    v: 5, seed, cells, ores: {}, nextOreId: 1,
+    v: 6, mode: CONFIG.mode, seed, cells, ores: {}, nextOreId: 1,
     actionsLeft: CONFIG.actions, moves: 0, score: 0, haul: [], lostCells: 0,
     assistsLeft: Object.fromEntries(CONFIG.assistOrder.map((id) => [id, CONFIG.assists[id].charges])),
     assistUses: Object.fromEntries(CONFIG.assistOrder.map((id) => [id, 0])),
@@ -403,7 +523,7 @@ function createGame(seed) {
   };
   for (let l = 0; l < CONFIG.layers; l++) {
     const [lo, hi] = CONFIG.layerOreCount[l];
-    const kinds = Array.from({ length: lo + Math.floor(rng() * (hi - lo + 1)) }, () => drawKind(rng, l));
+    const kinds = Array.from({ length: lo + Math.floor(rng() * (hi - lo + 1)) }, () => drawKind(rng, l)).filter(Boolean);
     for (const { kind, shape } of placeLayer(rng, kinds, cells[l])) addOre(game, l, kind, shape);
   }
   return game;
@@ -423,6 +543,7 @@ function addOre(game, l, kind, shape) {
 
 function drawKind(rng, l) {
   const kinds = CONFIG.oreOrder.filter((k) => CONFIG.ores[k].layers.includes(l));
+  if (!kinds.length) return null;
   let r = rng() * kinds.reduce((a, k) => a + CONFIG.ores[k].weight, 0);
   for (const k of kinds) { r -= CONFIG.ores[k].weight; if (r < 0) return k; }
   return kinds[kinds.length - 1];
@@ -871,7 +992,7 @@ function drawCracks(px, py, x, y, l, stage) {
 }
 
 function drawRock(px, py, x, y, l, cell, k) {
-  const base = ROCK_COLORS[l];
+  const base = ROCK_COLORS[l % ROCK_COLORS.length];
   ctx.fillStyle = rgb(base, k);
   ctx.fillRect(px, py, S, S);
   const R = mulberry32(hash4(game.seed, x, y, l));
@@ -985,9 +1106,9 @@ function render() {
       const f = frontLayer(game, x, y);
       front[r].push(f < 0 ? CONFIG.layers : f);
       const px = c * S, py = r * S;
-      if (f < 0) { drawVoid(px, py, x, y, SHADE[eff[CONFIG.layers]]); continue; }
+      if (f < 0) { drawVoid(px, py, x, y, SHADE[Math.min(SHADE.length - 1, eff[CONFIG.layers])]); continue; }
       const cell = game.cells[f][y][x];
-      const k = SHADE[eff[f]];
+      const k = SHADE[Math.min(SHADE.length - 1, eff[f])];
       if (cell.t === "ore") drawOre(px, py, c, r, x, y, f, cell, k);
       else drawRock(px, py, x, y, f, cell, k);
     }
@@ -1243,7 +1364,7 @@ function spawnFx(ev, shake = TOOL_SHAKE[tool] ?? 1) {
     fx.flashes.push({ x: h.x, y: h.y, life: 1 });
     if (reduceMotion) continue;
     const { c, r } = toDisplay(h.x, h.y);
-    const color = h.t === "ore" ? ORE_COLORS[h.kind].chip : ROCK_COLORS[h.l];
+    const color = h.t === "ore" ? ORE_COLORS[h.kind].chip : ROCK_COLORS[h.l % ROCK_COLORS.length];
     const n = h.destroyed ? (hits.length > 30 ? 3 : 12) : h.center ? 5 : 2;
     for (let i = 0; i < n; i++) {
       fx.particles.push({
@@ -1544,12 +1665,13 @@ function buildTools() {
       <span class="pips"></span>
     </button>`;
   }).join("");
-  for (const list of [$("tools"), $("assists")]) {
-    list.addEventListener("click", (e) => {
-      const b = e.target.closest(".tool");
-      if (b) selectTool(b.dataset.tool);
-    });
-  }
+  $("assist-box").hidden = !CONFIG.assistOrder.length;
+}
+for (const list of [$("tools"), $("assists")]) {
+  list.addEventListener("click", (e) => {
+    const b = e.target.closest(".tool");
+    if (b) selectTool(b.dataset.tool);
+  });
 }
 
 function toolAvailable(id) {
@@ -1588,15 +1710,16 @@ function syncTools() {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || screen !== "game") return;
   const id = [...CONFIG.toolOrder, ...CONFIG.assistOrder][Number(e.key) - 1];
   if (id) selectTool(id);
 });
 
 // ---- HUD ----
 function buildStrata() {
-  $("strata").innerHTML = ROCK_COLORS.map((col, l) =>
-    `<div class="stratum"><i style="background:${rgb(col)}"></i><span>${l + 1}層 <b>${CONFIG.rockHp[l]}</b></span></div>`
+  $("strata").style.gridTemplateColumns = `repeat(${CONFIG.layers}, minmax(0, 1fr))`;
+  $("strata").innerHTML = CONFIG.rockHp.map((hp, l) =>
+    `<div class="stratum"><i style="background:${rgb(ROCK_COLORS[l % ROCK_COLORS.length])}"></i><span>${l + 1}層 <b>${hp}</b></span></div>`
   ).join("");
 }
 
@@ -1609,11 +1732,11 @@ function buildCodex() {
         `<td>${o.size[0]}〜${o.size[1]}${o.shape === "rect" ? " 長方形" : ""}</td>` +
         `<td>${o.unbreakable ? "壊れない" : "×" + o.hardness}</td><td>×${o.value}</td></tr>`;
     }).join("");
-  try { $("codex-box").open = localStorage.getItem("me-codex") === "open"; } catch {}
-  $("codex-box").addEventListener("toggle", () => {
-    try { localStorage.setItem("me-codex", $("codex-box").open ? "open" : "closed"); } catch {}
-  });
 }
+try { $("codex-box").open = localStorage.getItem("me-codex") === "open"; } catch {}
+$("codex-box").addEventListener("toggle", () => {
+  try { localStorage.setItem("me-codex", $("codex-box").open ? "open" : "closed"); } catch {}
+});
 
 const gemStyle = (kind, size) => {
   const col = ORE_COLORS[kind];
@@ -1717,26 +1840,100 @@ $("finish").addEventListener("click", () => {
   showResult();
 });
 $("again").addEventListener("click", newGame);
-$("view-board").addEventListener("click", () => { $("result").hidden = true; canvas.focus(); });
+$("result-menu").addEventListener("click", () => showScreen("modes"));
+$("menu").addEventListener("click", () => {
+  const btn = $("menu");
+  const used = game.moves + CONFIG.assistOrder.reduce((a, id) => a + game.assistUses[id], 0);
+  if (game.over || used === 0 || btn.classList.contains("confirm")) {
+    clearTimeout(menuTimer);
+    showScreen("modes");
+    return;
+  }
+  btn.classList.add("confirm");
+  btn.textContent = "もう一度押すと中断";
+  menuTimer = setTimeout(resetMenuButton, 3000);
+});
+let menuTimer = 0;
+function resetMenuButton() {
+  $("menu").classList.remove("confirm");
+  $("menu").textContent = "モード選択";
+}
 
-// ---- boot (keeps the current dig across live updates) ----
-window.claude?.hot?.snapshot?.(() => ({ game, tool, lastMining }));
-function start(data) {
+// ---- screens ----
+let screen = "title";
+function showScreen(name) {
+  screen = name;
+  $("title").hidden = name !== "title";
+  $("modes").hidden = name !== "modes";
+  $("app").hidden = name !== "game";
+  if (name !== "game") $("result").hidden = true;
+  resetMenuButton();
+  if (name === "game") layout();
+  else (name === "title" ? $("to-modes") : $("mode-list").querySelector(".mode-card"))?.focus();
+}
+
+function enterMode(id) {
+  CONFIG = rulesFor(id);
   buildStrata();
   buildCodex();
   buildTools();
-  if (CONFIG.tools[data?.lastMining]) lastMining = data.lastMining;
+  lastMining = CONFIG.defaultTool;
+  tool = lastMining;
+  const m = MODES[id];
+  $("mode-sub").textContent = `${m.name}・${CONFIG.layers}層`;
+  newGame();
+  showScreen("game");
+}
+
+function buildMenus() {
+  $("title-gems").innerHTML = Object.keys(ORE_COLORS).map((k) => `<span class="gem-icon" style="${gemStyle(k, 1)};--g:14px"></span>`).join("");
+  const names = (catalog, ids) => (ids.length ? ids.map((id) => catalog[id].name).join("・") : "なし");
+  $("mode-list").innerHTML = MODE_ORDER.map((id) => {
+    const m = MODES[id];
+    const assists = Object.entries(m.assists).map(([a, n]) => `${ASSISTS[a].name}×${n}`);
+    return `<button type="button" class="mode-card" data-mode="${id}">
+      <span class="mode-top"><span class="mode-name">${m.name}</span><span class="mode-tag ${m.tag === "テスト" ? "test" : ""}">${m.tag}</span></span>
+      <p class="mode-desc">${m.desc}</p>
+      <dl class="mode-spec">
+        <dt>手数</dt><dd>${m.actions}</dd>
+        <dt>層</dt><dd>${m.strata.length}層(岩の耐久 ${m.strata.map((s) => s.hp).join("・")})</dd>
+        <dt>採掘道具</dt><dd>${names(TOOLS, m.tools)}</dd>
+        <dt>アシスト</dt><dd>${assists.length ? assists.join("・") : "なし"}</dd>
+        <dt>鉱石</dt><dd class="mode-ores">${m.ores.map((k) => `<span><span class="gem-icon" style="${gemStyle(k, 1)};--g:9px"></span>${ORES[k].name}</span>`).join("")}</dd>
+      </dl>
+    </button>`;
+  }).join("");
+}
+$("mode-list").addEventListener("click", (e) => {
+  const card = e.target.closest(".mode-card");
+  if (card) enterMode(card.dataset.mode);
+});
+$("to-modes").addEventListener("click", () => showScreen("modes"));
+$("back-title").addEventListener("click", () => showScreen("title"));
+$("view-board").addEventListener("click", () => { $("result").hidden = true; canvas.focus(); });
+
+// ---- boot (keeps the current dig across live updates) ----
+window.claude?.hot?.snapshot?.(() => ({ screen, game, tool, lastMining }));
+function start(data) {
+  buildMenus();
   const saved = data && data.game;
-  if (saved && saved.v === 5 && saved.cells?.length === CONFIG.layers) {
+  if (data?.screen === "game" && saved?.v === 6 && MODES[saved.mode]) {
+    CONFIG = rulesFor(saved.mode);
+    buildStrata();
+    buildCodex();
+    buildTools();
+    $("mode-sub").textContent = `${MODES[saved.mode].name}・${CONFIG.layers}層`;
     game = saved;
+    lastMining = CONFIG.tools[data.lastMining] ? data.lastMining : CONFIG.defaultTool;
+    showScreen("game");
     selectTool(data.tool);
     if (!toolAvailable(tool)) selectTool(lastMining);
     updateHud();
+    render();
+    if (game.over) showResult();
   } else {
-    newGame();
+    showScreen(data?.screen === "modes" ? "modes" : "title");
   }
-  layout();
-  if (game.over) showResult();
 }
 window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
 </script>
