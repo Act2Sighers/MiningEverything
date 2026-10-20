@@ -120,6 +120,15 @@ body {
 .stratum i { display: block; height: 12px; border-radius: 2px; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25); }
 .stratum b { font-weight: 400; font-variant-numeric: tabular-nums; }
 
+.codex summary { cursor: pointer; font-size: 12px; color: var(--muted); letter-spacing: 0.08em; }
+.codex summary:focus-visible { outline: 2px solid var(--lantern); outline-offset: 2px; }
+.codex-scroll { overflow-x: auto; margin-top: 6px; }
+.codex table { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+.codex th { font-weight: 400; color: var(--muted); text-align: left; padding: 2px 4px; }
+.codex td { padding: 3px 4px; border-top: 1px solid var(--line); white-space: nowrap; }
+.codex td:first-child { display: flex; align-items: center; gap: 6px; }
+.codex .gem-icon { --g: 9px; }
+
 /* ---- haul log ---- */
 .log { grid-area: log; display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
 .log h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 14px; color: var(--muted); letter-spacing: 0.08em; }
@@ -157,7 +166,7 @@ body {
 /* portrait compaction */
 .app.portrait .hud { gap: 8px; }
 .app.portrait .title { font-size: 18px; }
-.app.portrait .strata { display: none; }
+.app.portrait .strata, .app.portrait .codex { display: none; }
 .app.portrait .value { font-size: 22px; }
 .app.portrait .tools > .label { display: none; }
 .app.portrait .tool { gap: 4px; padding: 6px 8px; }
@@ -249,6 +258,10 @@ body {
       <span class="label">地層と岩の耐久</span>
       <div class="strata-row" id="strata"></div>
     </div>
+    <details class="codex" id="codex-box">
+      <summary>鉱石の一覧</summary>
+      <div class="codex-scroll"><table id="codex"></table></div>
+    </details>
   </header>
 
   <main class="board-wrap" id="board-wrap">
@@ -293,15 +306,24 @@ const CONFIG = {
   height: 8,            // logical short side
   layers: 4,
   rockHp: [8, 11, 14, 17],
-  oreHpDivisor: 2,      // ore hp = ceil(rock hp of the same layer / 2)
-  // What is buried where (layers are 0-indexed). Each deposit spreads `total` ores
-  // over its layers with `perLayer` [min, max] ores on each.
-  deposits: [
-    { kind: "quartz", layers: [0], perLayer: [3, 3], total: 3 },
-    { kind: "emerald", layers: [1, 2, 3], perLayer: [2, 5], total: 12 },
-  ],
-  oreSize: [3, 16],
-  maxAspect: 2,         // bounding box may not be thinner than 1:2
+  // How many ores each layer holds, [min, max]. Which kind each one is gets drawn by weight
+  // from the ores allowed on that layer.
+  layerOreCount: [[3, 4], [3, 5], [3, 5], [3, 5]],
+  // Ore kinds (layers are 0-indexed).
+  //   weight:   draw weight among the kinds allowed on a layer (lower = rarer)
+  //   value:    score multiplier
+  //   hardness: ore hp = ceil(hp of the rock on the same layer * hardness); unbreakable ore takes no damage
+  //   size:     [min, max] cells; maxAspect: bounding box limit (null = any); shape "rect" = rectangles only
+  ores: {
+    quartz:   { name: "石英", layers: [0], weight: 10, value: 0.8, hardness: 1, size: [3, 16], maxAspect: 2 },
+    coal:     { name: "石炭", layers: [0, 1, 2, 3], weight: 4, value: 0.5, hardness: 2, size: [4, 6], maxAspect: null },
+    emerald:  { name: "エメラルド", layers: [1, 2, 3], weight: 10, value: 1, hardness: 0.5, size: [3, 16], maxAspect: 2 },
+    ruby:     { name: "ルビー", layers: [1, 2, 3], weight: 10, value: 0.9, hardness: 0.7, size: [3, 16], maxAspect: 2 },
+    sapphire: { name: "サファイア", layers: [1, 2, 3], weight: 7, value: 1.2, hardness: 0.3, size: [3, 16], maxAspect: 2 },
+    topaz:    { name: "トパーズ", layers: [1, 2, 3], weight: 8, value: 1, hardness: 0.5, size: [3, 16], maxAspect: 2, shape: "rect" },
+    diamond:  { name: "ダイヤモンド", layers: [3], weight: 2, value: 10, unbreakable: true, size: [2, 4], maxAspect: null },
+  },
+  oreOrder: ["quartz", "coal", "emerald", "ruby", "sapphire", "topaz", "diamond"],
   actions: 50,
   // Damage grids centred on the cell you hit (0 = no damage). Keep them odd-sized and
   // symmetric across the diagonal: the board is shown transposed on portrait screens.
@@ -330,22 +352,19 @@ const CONFIG = {
   },
   assistOrder: ["sensor", "tweezers", "file"],
   // crackPenalty: a cracked ore cell is worth (1 - crackPenalty * damage ratio) of an intact one
+  // (an ore kind may set its own crackPenalty)
   score: { perCell: 10, bonusPerCellSq: 2, crackPenalty: 0.5 },
 };
 
-const ORE_TYPES = {
-  emerald: { name: "エメラルド" },
-  quartz: { name: "石英" },
-};
 
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 const ceilDiv = (a, b) => Math.ceil(a / b);
-const oreHp = (l) => ceilDiv(CONFIG.rockHp[l], CONFIG.oreHpDivisor);
+const oreHp = (kind, l) => Math.ceil(CONFIG.rockHp[l] * CONFIG.ores[kind].hardness - 1e-9);
 const inBounds = (x, y) => x >= 0 && y >= 0 && x < CONFIG.width && y < CONFIG.height;
 const oreScore = (n) => CONFIG.score.perCell * n + CONFIG.score.bonusPerCellSq * n * n;
 // crack stage: 1 at <= 2/3 of max, 2 at <= 1/3 of max (thresholds rounded up)
-const crackStage = (c) => (c.hp <= ceilDiv(c.max, 3) ? 2 : c.hp <= ceilDiv(c.max * 2, 3) ? 1 : 0);
+const crackStage = (c) => (c.unbreakable ? 0 : c.hp <= ceilDiv(c.max, 3) ? 2 : c.hp <= ceilDiv(c.max * 2, 3) ? 1 : 0);
 
 function mulberry32(a) {
   return function () {
@@ -375,18 +394,17 @@ function createGame(seed) {
     cells.push(layer);
   }
   const game = {
-    v: 4, seed, cells, ores: {}, nextOreId: 1,
+    v: 5, seed, cells, ores: {}, nextOreId: 1,
     actionsLeft: CONFIG.actions, moves: 0, score: 0, haul: [], lostCells: 0,
     assistsLeft: Object.fromEntries(CONFIG.assistOrder.map((id) => [id, CONFIG.assists[id].charges])),
     assistUses: Object.fromEntries(CONFIG.assistOrder.map((id) => [id, 0])),
     marks: [], // sensor readings: { ids: ore ids, left: actions until it fades, x, y }
     over: false, endReason: null,
   };
-  for (const dep of CONFIG.deposits) {
-    const counts = pickLayerCounts(rng, dep);
-    dep.layers.forEach((l, i) => {
-      for (const shape of placeLayer(rng, counts[i], cells[l])) addOre(game, l, dep.kind, shape);
-    });
+  for (let l = 0; l < CONFIG.layers; l++) {
+    const [lo, hi] = CONFIG.layerOreCount[l];
+    const kinds = Array.from({ length: lo + Math.floor(rng() * (hi - lo + 1)) }, () => drawKind(rng, l));
+    for (const { kind, shape } of placeLayer(rng, kinds, cells[l])) addOre(game, l, kind, shape);
   }
   return game;
 }
@@ -396,46 +414,75 @@ const emptyCell = () => ({ t: "empty", hp: 0, max: 0, ore: 0, kind: null });
 
 function addOre(game, l, kind, shape) {
   const id = game.nextOreId++;
-  const hp = oreHp(l);
+  const type = CONFIG.ores[kind];
+  const hp = type.unbreakable ? 1 : oreHp(kind, l);
   game.ores[id] = { id, kind, layer: l, cells: shape.map(([x, y]) => [x, y]) };
-  for (const [x, y] of shape) game.cells[l][y][x] = { t: "ore", hp, max: hp, ore: id, kind };
+  for (const [x, y] of shape)
+    game.cells[l][y][x] = { t: "ore", hp, max: hp, ore: id, kind, ...(type.unbreakable && { unbreakable: true }) };
 }
 
-function pickLayerCounts(rng, dep) {
-  const [lo, hi] = dep.perLayer;
-  for (let i = 0; i < 10000; i++) {
-    const c = dep.layers.map(() => lo + Math.floor(rng() * (hi - lo + 1)));
-    if (c.reduce((a, b) => a + b, 0) === dep.total) return c;
-  }
-  throw new Error("no valid ore count split");
+function drawKind(rng, l) {
+  const kinds = CONFIG.oreOrder.filter((k) => CONFIG.ores[k].layers.includes(l));
+  let r = rng() * kinds.reduce((a, k) => a + CONFIG.ores[k].weight, 0);
+  for (const k of kinds) { r -= CONFIG.ores[k].weight; if (r < 0) return k; }
+  return kinds[kinds.length - 1];
 }
 
-function randomOreSize(rng) {
-  const [lo, hi] = CONFIG.oreSize;
+function randomOreSize(rng, [lo, hi]) {
   const u = (rng() + rng() + rng()) / 3; // bell-shaped, favors mid sizes
   return lo + Math.min(hi - lo, Math.floor(u * (hi - lo + 1)));
 }
 
-// Place `count` ores on one layer, keeping at least one cell (incl. diagonals) between ores.
-function placeLayer(rng, count, layerCells) {
-  for (let attempt = 0; attempt < 400; attempt++) {
+// Place the given kinds on one layer, keeping at least one cell (incl. diagonals) between ores.
+// Sizes that do not fit shrink toward the kind's minimum; if the layer still fails, it drops an ore.
+function placeLayer(rng, kinds, layerCells) {
+  for (let attempt = 0; attempt < 600; attempt++) {
+    const n = kinds.length - Math.floor(attempt / 300);
     const occ = layerCells.map((row) => row.map((c) => c.t === "ore"));
-    const sizes = Array.from({ length: count }, () => randomOreSize(rng)).sort((a, b) => b - a);
-    const shapes = [];
+    const plan = kinds.slice(0, n).map((kind) => ({ kind, size: randomOreSize(rng, CONFIG.ores[kind].size) }))
+      .sort((a, b) => b.size - a.size);
+    const placed = [];
     let ok = true;
-    for (let size of sizes) {
-      let shape = null;
+    for (const p of plan) {
+      const type = CONFIG.ores[p.kind];
+      let shape = null, size = p.size;
       for (let t = 0; t < 60 && !shape; t++) {
-        if (t > 0 && t % 12 === 0) size = Math.max(1, size - 1);
-        shape = growShape(rng, occ, size);
+        if (t > 0 && t % 12 === 0) size = Math.max(type.size[0], size - 1);
+        shape = type.shape === "rect" ? rectShape(rng, occ, type) : growShape(rng, occ, size, type.maxAspect);
       }
       if (!shape) { ok = false; break; }
       for (const [x, y] of shape) occ[y][x] = true;
-      shapes.push(shape);
+      placed.push({ kind: p.kind, shape });
     }
-    if (ok) return shapes;
+    if (ok) return placed;
   }
   throw new Error("ore placement failed");
+}
+
+// A random rectangle whose area and aspect fit the kind, at a random free spot.
+function rectShape(rng, occ, type) {
+  const dims = [];
+  for (let w = 1; w <= CONFIG.width; w++)
+    for (let h = 1; h <= CONFIG.height; h++) {
+      const a = w * h;
+      if (a < type.size[0] || a > type.size[1]) continue;
+      if (type.maxAspect && Math.max(w, h) > type.maxAspect * Math.min(w, h)) continue;
+      dims.push([w, h]);
+    }
+  if (!dims.length) return null;
+  const [w, h] = dims[Math.floor(rng() * dims.length)];
+  const spots = [];
+  for (let y = 0; y + h <= CONFIG.height; y++)
+    for (let x = 0; x + w <= CONFIG.width; x++) {
+      let free = true;
+      for (let j = 0; j < h && free; j++) for (let i = 0; i < w && free; i++) if (nearOccupied(occ, x + i, y + j)) free = false;
+      if (free) spots.push([x, y]);
+    }
+  if (!spots.length) return null;
+  const [x0, y0] = spots[Math.floor(rng() * spots.length)];
+  const shape = [];
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) shape.push([x0 + i, y0 + j]);
+  return shape;
 }
 
 function nearOccupied(occ, x, y) {
@@ -445,7 +492,7 @@ function nearOccupied(occ, x, y) {
   return false;
 }
 
-function growShape(rng, occ, size) {
+function growShape(rng, occ, size, maxAspect) {
   const W = CONFIG.width;
   const free = (x, y) => inBounds(x, y) && !nearOccupied(occ, x, y);
   const starts = [];
@@ -466,10 +513,10 @@ function growShape(rng, occ, size) {
         seen.add(k);
         const w = Math.max(maxX, nx) - Math.min(minX, nx) + 1;
         const h = Math.max(maxY, ny) - Math.min(minY, ny) + 1;
-        if (Math.max(w, h) > CONFIG.maxAspect * Math.min(w, h)) continue;
+        if (maxAspect && Math.max(w, h) > maxAspect * Math.min(w, h)) continue;
         let nb = 0;
         for (const [ex, ey] of DIRS4) if (inBounds(nx + ex, ny + ey) && inShape.has((ny + ey) * W + nx + ex)) nb++;
-        const weight = nb * nb;
+        const weight = maxAspect ? nb * nb : nb; // free-form kinds grow looser shapes
         total += weight;
         cands.push({ x: nx, y: ny, weight });
       }
@@ -545,6 +592,7 @@ function strike(game, x, y, tool) {
   const touched = new Set();
   for (const h of hits) {
     const c = game.cells[h.l][h.y][h.x];
+    if (c.unbreakable) { ev.hits.push({ ...h, t: c.t, kind: c.kind, destroyed: false, blocked: true }); continue; }
     c.hp = Math.max(0, c.hp - h.dmg);
     const destroyed = c.hp === 0;
     ev.hits.push({ ...h, t: c.t, kind: c.kind, destroyed });
@@ -709,7 +757,8 @@ function oreQuality(game, ore) {
   let q = 0;
   for (const [x, y] of ore.cells) {
     const c = game.cells[ore.layer][y][x];
-    q += crackStage(c) ? 1 - (CONFIG.score.crackPenalty * (c.max - c.hp)) / c.max : 1;
+    const penalty = CONFIG.ores[ore.kind].crackPenalty ?? CONFIG.score.crackPenalty;
+    q += crackStage(c) ? 1 - (penalty * (c.max - c.hp)) / c.max : 1;
   }
   return q / ore.cells.length;
 }
@@ -717,7 +766,7 @@ function oreQuality(game, ore) {
 function acquireOre(game, ore, via) {
   const size = ore.cells.length;
   const quality = oreQuality(game, ore);
-  const pts = Math.ceil(oreScore(size) * quality - 1e-9); // epsilon: keep float noise from rounding up
+  const pts = Math.ceil(oreScore(size) * CONFIG.ores[ore.kind].value * quality - 1e-9); // epsilon: keep float noise from rounding up
   for (const [x, y] of ore.cells) game.cells[ore.layer][y][x] = emptyCell();
   delete game.ores[ore.id];
   game.score += pts;
@@ -737,6 +786,11 @@ const ROCK_COLORS = [ // muted on purpose so ore reads as the only saturated thi
 const ORE_COLORS = {
   emerald: { light: [150, 240, 196], mid: [34, 176, 116], dark: [12, 110, 72], edge: [4, 56, 36], chip: [60, 210, 140] },
   quartz: { light: [250, 250, 246], mid: [210, 211, 214], dark: [150, 153, 160], edge: [72, 74, 82], chip: [232, 232, 236] },
+  coal: { light: [128, 128, 138], mid: [50, 50, 57], dark: [26, 26, 30], edge: [6, 6, 8], chip: [80, 80, 88], spark: 0.3 },
+  ruby: { light: [255, 150, 165], mid: [196, 30, 62], dark: [118, 10, 36], edge: [58, 4, 18], chip: [232, 64, 96] },
+  sapphire: { light: [150, 190, 255], mid: [42, 94, 214], dark: [20, 46, 132], edge: [8, 20, 70], chip: [76, 124, 236] },
+  topaz: { light: [255, 232, 140], mid: [228, 168, 28], dark: [148, 98, 10], edge: [78, 50, 4], chip: [250, 200, 64] },
+  diamond: { light: [240, 252, 255], mid: [172, 226, 242], dark: [98, 160, 192], edge: [36, 78, 104], chip: [206, 242, 252], spark: 1 },
 };
 const SHADE = [1, 0.78, 0.6, 0.46, 0.34];
 const TOOL_SHAKE = { chisel: 0.35, pickaxe: 1, hammer: 1.8 };
@@ -868,7 +922,7 @@ function drawOre(px, py, c, r, x, y, l, cell, k) {
   const R = mulberry32(hash4(game.seed, x, y, l + 5));
   if (R() < 0.45) {
     const sx = px + S * (0.3 + R() * 0.4), sy = py + S * (0.3 + R() * 0.4), sr = S * (0.08 + R() * 0.06);
-    ctx.fillStyle = `rgba(240,255,248,${0.75 * k})`;
+    ctx.fillStyle = `rgba(240,255,248,${(col.spark ?? 0.75) * k})`;
     ctx.beginPath();
     ctx.moveTo(sx, sy - sr); ctx.lineTo(sx + sr * 0.25, sy - sr * 0.25); ctx.lineTo(sx + sr, sy);
     ctx.lineTo(sx + sr * 0.25, sy + sr * 0.25); ctx.lineTo(sx, sy + sr); ctx.lineTo(sx - sr * 0.25, sy + sr * 0.25);
@@ -1084,7 +1138,7 @@ function drawMarks() {
         const d = toDisplay(x, y);
         if (!top || d.r < top.r || (d.r === top.r && d.c < top.c)) top = d;
       }
-      drawTag(`${ORE_TYPES[ore.kind].name} ${ore.layer + 1}層・${m.left}手`, top.c * S + 2, top.r * S + 2, col);
+      drawTag(`${CONFIG.ores[ore.kind].name} ${ore.layer + 1}層・${m.left}手`, top.c * S + 2, top.r * S + 2, col);
     }
   }
 }
@@ -1209,6 +1263,8 @@ function spawnFx(ev, shake = TOOL_SHAKE[tool] ?? 1) {
 }
 
 // ---- sound (synthesised; the browser only allows it after the first tap or key) ----
+// Each ore kind collects in its own key (root note of a major arpeggio, Hz).
+const ACQUIRE_ROOT = { quartz: 587, coal: 220, emerald: 523, ruby: 659, sapphire: 698, topaz: 784, diamond: 1047 };
 const sfx = (() => {
   let ac = null, master = null, noiseBuf = null, on = true;
   try { on = localStorage.getItem("me-sound") !== "off"; } catch {}
@@ -1268,7 +1324,7 @@ const sfx = (() => {
     notes.forEach((n, i) => tone(n, dur, { type, gain, at: at + i * step }));
 
   const sounds = {
-    hit({ tool, ore, destroyed }) {
+    hit({ tool, ore, destroyed, blocked }) {
       if (tool === "chisel") {
         tone(1900, 0.05, { type: "square", gain: 0.05 });
         noise(0.07, { type: "highpass", freq: 3000, gain: 0.25 });
@@ -1281,11 +1337,15 @@ const sfx = (() => {
       }
       if (destroyed) noise(0.2, { freq: 420, q: 0.7, gain: Math.min(0.35, 0.08 + destroyed * 0.03), at: 0.03 });
       if (ore) { tone(2400, 0.28, { gain: 0.1, at: 0.01 }); tone(3150, 0.22, { gain: 0.05, at: 0.02 }); }
+      if (blocked) { tone(3520, 0.4, { type: "triangle", gain: 0.09, at: 0.01 }); tone(5280, 0.3, { gain: 0.05, at: 0.03 }); }
     },
     acquire({ kind, size, at = 0 }) {
-      const scale = kind === "quartz" ? [587, 740, 880, 1175, 1480] : [523, 659, 784, 1047, 1319];
-      arp(scale.slice(0, Math.min(5, 2 + Math.floor(size / 4))), { at });
+      const root = ACQUIRE_ROOT[kind] ?? 523;
+      const scale = [1, 5 / 4, 3 / 2, 2, 5 / 2].map((r) => root * r);
+      const notes = scale.slice(0, Math.min(5, 2 + Math.floor(size / 4)));
+      arp(notes, { at, type: kind === "coal" ? "square" : "triangle", gain: kind === "coal" ? 0.07 : 0.16 });
       tone(scale[scale.length - 1] * 2, 0.5, { gain: 0.04, at: at + 0.25 });
+      if (kind === "diamond") arp(scale.map((f) => f * 2).reverse(), { at: at + 0.4, step: 0.05, dur: 0.6, type: "sine", gain: 0.06 });
     },
     sensor() {
       tone(700, 0.3, { gain: 0.18, to: 1400 });
@@ -1363,7 +1423,12 @@ function swing(x, y) {
     ev = strike(game, x, y, tool);
     if (!ev) { render(); return; } // empty cell: no action spent
     spawnFx(ev);
-    sfx.play("hit", { tool, ore: ev.hits.some((h) => h.t === "ore"), destroyed: ev.hits.filter((h) => h.destroyed).length });
+    sfx.play("hit", {
+      tool,
+      ore: ev.hits.some((h) => h.t === "ore" && !h.blocked),
+      blocked: ev.hits.some((h) => h.blocked),
+      destroyed: ev.hits.filter((h) => h.destroyed).length,
+    });
   } else if (tool === "sensor") {
     ev = sense(game, x, y);
     if (!ev) return;
@@ -1535,6 +1600,21 @@ function buildStrata() {
   ).join("");
 }
 
+function buildCodex() {
+  const layers = (ls) => (ls.length > 1 ? `${ls[0] + 1}〜${ls[ls.length - 1] + 1}` : `${ls[0] + 1}`);
+  $("codex").innerHTML = `<tr><th>鉱石</th><th>層</th><th>大きさ</th><th>硬さ</th><th>価値</th></tr>` +
+    CONFIG.oreOrder.map((k) => {
+      const o = CONFIG.ores[k];
+      return `<tr><td><span class="gem-icon" style="${gemStyle(k, 1)};--g:9px"></span>${o.name}</td><td>${layers(o.layers)}</td>` +
+        `<td>${o.size[0]}〜${o.size[1]}${o.shape === "rect" ? " 長方形" : ""}</td>` +
+        `<td>${o.unbreakable ? "壊れない" : "×" + o.hardness}</td><td>×${o.value}</td></tr>`;
+    }).join("");
+  try { $("codex-box").open = localStorage.getItem("me-codex") === "open"; } catch {}
+  $("codex-box").addEventListener("toggle", () => {
+    try { localStorage.setItem("me-codex", $("codex-box").open ? "open" : "closed"); } catch {}
+  });
+}
+
 const gemStyle = (kind, size) => {
   const col = ORE_COLORS[kind];
   return `--g:${Math.round(8 + size * 0.9)}px;background:linear-gradient(135deg, ${rgb(col.light)}, ${rgb(col.mid)} 55%, ${rgb(col.dark)});box-shadow:0 0 0 1px ${rgb(col.edge)}`;
@@ -1557,7 +1637,7 @@ function updateHud(freshCount = 0) {
       return `
       <li class="${i < freshCount ? "fresh" : ""}">
         <span class="gem-icon" style="${gemStyle(h.kind, h.size)}"></span>
-        <span><span class="haul-name">${ORE_TYPES[h.kind].name} ${h.size}マス</span><br class="haul-meta"><span class="haul-meta">${meta.join("・")}</span></span>
+        <span><span class="haul-name">${CONFIG.ores[h.kind].name} ${h.size}マス</span><br class="haul-meta"><span class="haul-meta">${meta.join("・")}</span></span>
         <span class="haul-pts">+${h.pts}</span>
       </li>`;
     }).join("");
@@ -1643,10 +1723,11 @@ $("view-board").addEventListener("click", () => { $("result").hidden = true; can
 window.claude?.hot?.snapshot?.(() => ({ game, tool, lastMining }));
 function start(data) {
   buildStrata();
+  buildCodex();
   buildTools();
   if (CONFIG.tools[data?.lastMining]) lastMining = data.lastMining;
   const saved = data && data.game;
-  if (saved && saved.v === 4 && saved.cells?.length === CONFIG.layers) {
+  if (saved && saved.v === 5 && saved.cells?.length === CONFIG.layers) {
     game = saved;
     selectTool(data.tool);
     if (!toolAvailable(tool)) selectTool(lastMining);
